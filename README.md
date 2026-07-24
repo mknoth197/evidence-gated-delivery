@@ -46,23 +46,48 @@ scripts/record_retrospective.py Records fixed-rubric phase retrospectives
 tests/                   Standard-library harness tests
 ```
 
-## Quick start
+## Requirements
+
+- Python 3. The scripts use only the Python standard library.
+- A local Git worktree for `init_run.py`.
+- An authenticated `gh` CLI when a phase needs to create or read GitHub artifacts, or resolve a
+  private GitHub attachment.
+- An agent runtime with subagents and ImageGen for the full Plan tournament. The validator can run
+  anywhere with Python 3, but a Plan cannot pass without the required evidence from those tools.
+
+## Initialize a run
+
+From a clone of this repository, create a manifest before substantive phase work:
 
 ```bash
-python3 scripts/init_run.py --mode research --goal "Your goal" --repo /path/to/repo
-python3 scripts/validate_run.py /tmp/evidence-gated-delivery-<run>.json --phase research
-python3 -m unittest discover -s tests -v
+python3 scripts/init_run.py \
+  --mode research \
+  --goal "Your goal" \
+  --repo /path/to/git-worktree \
+  --output /tmp/evidence-gated-delivery-run.json
 ```
 
-For full operating rules, start with [SKILL.md](SKILL.md), then read the linked references before
-running a phase.
+Initialization creates a receipt; it does **not** complete Research. Follow [SKILL.md](SKILL.md)
+and its linked phase contracts to collect evidence, publish and read back the required artifacts,
+record the independent audit, then validate the phase:
+
+```bash
+python3 scripts/validate_run.py /tmp/evidence-gated-delivery-run.json --phase research
+```
+
+A nonzero validation result is a stop gate, not a warning. Run the package tests separately:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## Install as an agent skill
 
 The repository is compatible with the open `skills` CLI. Install it directly for Codex:
 
 ```bash
-npx skills@latest add mknoth197/evidence-gated-delivery --agent codex --yes
+npx skills@latest add mknoth197/evidence-gated-delivery \
+  --skill evidence-gated-delivery --agent codex --yes
 ```
 
 Or let the CLI choose the destination agent interactively:
@@ -71,8 +96,14 @@ Or let the CLI choose the destination agent interactively:
 npx skills@latest add mknoth197/evidence-gated-delivery
 ```
 
-Use a project-scoped install when the workflow should travel with a repository; add `-g` for a
-global install. The CLI supports other compatible agents as well. See the
+The CLI defaults to project scope. To install globally, add `-g`; for example:
+
+```bash
+npx skills@latest add mknoth197/evidence-gated-delivery \
+  --skill evidence-gated-delivery --agent codex --global --yes
+```
+
+The CLI supports other compatible agents as well. See the
 [skills CLI documentation](https://www.skills.sh/docs/cli) for current options.
 
 ## Safety model
