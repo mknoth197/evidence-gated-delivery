@@ -1,0 +1,10 @@
+{
+  "name": "evidence-gated-delivery",
+  "description": "An evidence-backed Research, Plan, Implement, and Review workflow with validation and continuous improvement gates.",
+  "skills": [
+    {
+      "name": "evidence-gated-delivery",
+      "path": "SKILL.md"
+    }
+  ]
+}
