@@ -71,7 +71,7 @@ Before relying on a locally installed copy, compare it with a release checkout:
 
 ```bash
 python3 scripts/verify_skill_sync.py \
-  --installed-skill ~/.codex/skills/evidence-gated-delivery
+  --installed-skill ~/.agents/skills/evidence-gated-delivery
 ```
 
 After a transition, record downstream CI, review, and defect outcomes, then periodically inspect
