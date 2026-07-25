@@ -62,6 +62,7 @@ scripts/verify_skill_sync.py Verifies an installed skill matches this release
 scripts/record_transition_outcome.py Records outcomes for confidence calibration
 scripts/transition_calibration.py Reports whether confidence predicts outcomes
 scripts/run_status.py       Emits a machine-readable run dashboard
+bundled-skills/feature-to-spec/ Portable Plan-phase EARS specification skill
 tests/                   Standard-library harness tests
 ```
 
@@ -131,6 +132,13 @@ The repository is compatible with the open `skills` CLI. Install it directly for
 ```bash
 npx skills@latest add mknoth197/evidence-gated-delivery \
   --skill evidence-gated-delivery --agent codex --yes
+```
+
+To install both the workflow and its bundled `feature-to-spec` dependency, include `--full-depth`:
+
+```bash
+npx skills@latest add mknoth197/evidence-gated-delivery \
+  --full-depth --skill evidence-gated-delivery feature-to-spec --agent codex --yes
 ```
 
 Or let the CLI choose the destination agent interactively:

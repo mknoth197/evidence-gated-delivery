@@ -5,6 +5,10 @@
     {
       "name": "evidence-gated-delivery",
       "path": "SKILL.md"
+    },
+    {
+      "name": "feature-to-spec",
+      "path": "bundled-skills/feature-to-spec/SKILL.md"
     }
   ]
 }

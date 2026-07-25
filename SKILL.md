@@ -285,9 +285,10 @@ Goal: choose and freeze what should be built.
 10. Treat the final mockup as normative. Every visible element, interaction, state, label, data
     mapping, responsive rule, and accessibility behavior must be represented in the plan. Require
     no differences or gaps unless a deviation is explicitly documented and approved.
-11. Read the active `feature-to-spec` skill and applicable spec-format instructions for its EARS
+11. Read the bundled [`feature-to-spec` skill](bundled-skills/feature-to-spec/SKILL.md) for EARS
     patterns, personas, value assessment, diagrams, ambiguity handling, task structure, and
-    validation rubric. Do not execute its repository-file creation phase.
+    validation rubric. Apply repository-specific spec instructions as additional constraints when
+    present. Do not execute its repository-file creation phase.
 12. Redirect the complete feature-to-spec-quality output into a follow-up GitHub implementation
     issue. It must use the exact headings `## Problem Statement`, `## Personas`,
     `## Value Assessment`, `## User Stories`, `## Design`, `## Tasks`, `## Out of Scope`,
