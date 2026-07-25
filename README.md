@@ -58,7 +58,35 @@ scripts/init_run.py      Creates a durable run manifest
 scripts/validate_run.py  Validates phase transitions and writes receipts
 scripts/preflight_plan.py Validates a draft plan before publication
 scripts/record_retrospective.py Records fixed-rubric phase retrospectives
+scripts/verify_skill_sync.py Verifies an installed skill matches this release
+scripts/record_transition_outcome.py Records outcomes for confidence calibration
+scripts/transition_calibration.py Reports whether confidence predicts outcomes
+scripts/run_status.py       Emits a machine-readable run dashboard
 tests/                   Standard-library harness tests
+```
+
+## Operational feedback
+
+Before relying on a locally installed copy, compare it with a release checkout:
+
+```bash
+python3 scripts/verify_skill_sync.py \
+  --installed-skill ~/.codex/skills/evidence-gated-delivery
+```
+
+After a transition, record downstream CI, review, and defect outcomes, then periodically inspect
+whether the `8/10` threshold is calibrated:
+
+```bash
+python3 scripts/record_transition_outcome.py --input outcome.json
+python3 scripts/transition_calibration.py \
+  ~/.codex/evidence-gated-delivery-history/transition-outcomes.jsonl
+```
+
+At any point, render the run dashboard from its manifest:
+
+```bash
+python3 scripts/run_status.py /tmp/evidence-gated-delivery-run.json
 ```
 
 ## Requirements

@@ -1065,6 +1065,25 @@ def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: li
     binding = data.get("phase_receipt_bindings", {}).get(predecessor) if isinstance(data.get("phase_receipt_bindings"), dict) else None
     if not isinstance(binding, dict) or judgment.get("phase_receipt_sha256") != binding.get("receipt_sha256"):
         errors.append(f"{predecessor} transition judgment must bind the predecessor VALID receipt SHA-256")
+    else:
+        evidence, session_error = agent_session_evidence(judgment.get("agent_id", ""))
+        if session_error:
+            errors.append(f"{predecessor} transition judge session verification failed: {session_error}")
+        else:
+            assert evidence is not None
+            session_meta = evidence["session_meta"]
+            subagent = session_meta.get("source", {}).get("subagent", {}).get("thread_spawn", {})
+            expected_marker = f"phase transition judge: {predecessor} -> {target_phase}"
+            if session_meta.get("thread_source") != "subagent" or subagent.get("depth") != 1:
+                errors.append(f"{predecessor} transition judge must be a depth-one Codex subagent")
+            if subagent.get("parent_thread_id") != data.get("parent_thread_id"):
+                errors.append(f"{predecessor} transition judge does not belong to the current parent thread")
+            if expected_marker not in evidence["prompt"].lower():
+                errors.append(f"{predecessor} transition judge prompt lacks the required role marker")
+            if judgment.get("result_sha256") != hashlib.sha256(evidence["final_message"].encode()).hexdigest():
+                errors.append(f"{predecessor} transition judge result SHA-256 does not match its session")
+            if timestamp(judgment.get("completed_at")) != timestamp(evidence.get("completed_at")):
+                errors.append(f"{predecessor} transition judge completed_at does not match its session")
     excluded_ids = set(agent_ids(data.get("trace_audits")))
     excluded_ids |= {
         entry.get("agent_id")

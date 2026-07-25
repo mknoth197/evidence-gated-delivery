@@ -87,7 +87,18 @@ class PublicationTests(unittest.TestCase):
 
     def test_transition_judge_allows_exact_threshold(self):
         errors: list[str] = []
-        validator.validate_transition_gate(self.transition_data(), "plan", errors)
+        data = self.transition_data()
+        data["parent_thread_id"] = "parent-thread"
+        evidence = {
+            "prompt": "Phase transition judge: research -> plan",
+            "final_message": "transition result",
+            "completed_at": "2026-07-25T12:00:00Z",
+            "session_meta": {"thread_source": "subagent", "source": {"subagent": {"thread_spawn": {"depth": 1, "parent_thread_id": "parent-thread"}}}},
+        }
+        data["phase_transition_judgments"][0]["result_sha256"] = hashlib.sha256(b"transition result").hexdigest()
+        data["automation_decisions"][0]["judge_receipt_sha256"] = data["phase_transition_judgments"][0]["result_sha256"]
+        with patch.object(validator, "agent_session_evidence", return_value=(evidence, None)):
+            validator.validate_transition_gate(data, "plan", errors)
         self.assertEqual(errors, [])
 
     def test_transition_judge_rejects_below_threshold_and_high_finding(self):
