@@ -904,10 +904,6 @@ def add_orientation_errors(data: dict[str, Any], errors: list[str], skip_remote:
     add_plan_errors(data, errors, skip_remote)
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
-    if data.get("approval_requested") is not True:
-        errors.append("approval_requested must be true")
-    if data.get("approval_granted") is True:
-        errors.append("approval_granted must still be false at the preapproval gate")
     if data.get("no_mutation_before_approval") is not True:
         errors.append("no_mutation_before_approval must be true")
 
@@ -923,19 +919,9 @@ def add_implement_errors(data: dict[str, Any], errors: list[str], skip_remote: b
     add_plan_errors(data, errors, skip_remote)
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
-    if data.get("approval_requested") is not True:
-        errors.append("approval_requested must be true")
-    if data.get("approval_granted") is not True:
-        errors.append("approval_granted must be true")
-    approval = data.get("approval_evidence")
-    approval_at = timestamp(approval.get("received_at")) if isinstance(approval, dict) else None
     mutation_at = timestamp(data.get("first_mutation_at"))
-    if not isinstance(approval, dict) or not nonempty(approval.get("quote")) or approval_at is None:
-        errors.append("approval_evidence must contain the user's exact quote and timestamp")
     if mutation_at is None:
         errors.append("first_mutation_at must be an ISO-8601 timestamp")
-    elif approval_at is not None and mutation_at < approval_at:
-        errors.append("first mutation occurred before explicit approval")
     if data.get("no_mutation_before_approval") is not True:
         errors.append("no_mutation_before_approval must be true")
 
@@ -1012,6 +998,99 @@ def add_handoff_error(data: dict[str, Any], phase: str, errors: list[str]) -> No
     }.get(phase)
     if expected_command and expected_command not in invocation:
         errors.append(f"next_invocation must contain {expected_command}")
+
+
+def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: list[str]) -> None:
+    """Authorize a successor only after an independent, evidence-bound technical judgment."""
+    predecessor_by_target = {"plan": "research", "implement": "plan", "review": "implement"}
+    predecessor = predecessor_by_target.get(target_phase)
+    if predecessor is None:
+        return
+    policy = data.get("automation_policy")
+    if not isinstance(policy, dict):
+        errors.append("automation_policy is required for an autonomous phase transition")
+        return
+    if policy.get("default_mode") != "autonomous":
+        errors.append("automation_policy.default_mode must be autonomous")
+    if policy.get("auto_transition_min_confidence") != 8:
+        errors.append("automation_policy.auto_transition_min_confidence must equal 8")
+    stops = policy.get("stop_before_phases")
+    releases = policy.get("released_stop_gates")
+    if not isinstance(stops, list) or any(v not in predecessor_by_target for v in stops):
+        errors.append("automation_policy.stop_before_phases must contain only plan, implement, or review")
+        stops = []
+    if not isinstance(releases, list):
+        errors.append("automation_policy.released_stop_gates must be an array")
+        releases = []
+    if target_phase in stops:
+        released = any(
+            isinstance(entry, dict)
+            and entry.get("phase") == target_phase
+            and timestamp(entry.get("released_at")) is not None
+            and nonempty(entry.get("user_evidence"))
+            for entry in releases
+        )
+        if not released:
+            errors.append(f"human stop gate before {target_phase} is open")
+
+    judgments = data.get("phase_transition_judgments")
+    if not isinstance(judgments, list):
+        errors.append("phase_transition_judgments must be an array")
+        return
+    judgment = next(
+        (entry for entry in judgments if isinstance(entry, dict) and entry.get("phase") == predecessor),
+        None,
+    )
+    if judgment is None:
+        errors.append(f"{predecessor} requires an independent phase transition judgment")
+        return
+    if judgment.get("successor_phase") != target_phase:
+        errors.append(f"{predecessor} transition judgment must name {target_phase} as successor_phase")
+    if judgment.get("status") != "pass" or judgment.get("recommendation") != "proceed":
+        errors.append(f"{predecessor} transition judgment must pass and recommend proceed")
+    confidence = judgment.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, int) or not 8 <= confidence <= 10:
+        errors.append(f"{predecessor} transition judgment confidence must be an integer from 8 through 10")
+    if not finite_number(judgment.get("technical_accuracy_score"), 3, 4):
+        errors.append(f"{predecessor} transition judgment technical_accuracy_score must be 3..4")
+    if not isinstance(judgment.get("evidence_ids"), list) or not any(nonempty(item) for item in judgment["evidence_ids"]):
+        errors.append(f"{predecessor} transition judgment needs evidence_ids")
+    if timestamp(judgment.get("completed_at")) is None or not nonempty(judgment.get("result_sha256")):
+        errors.append(f"{predecessor} transition judgment needs completed_at and result_sha256")
+    findings = judgment.get("blocking_findings", [])
+    if not isinstance(findings, list):
+        errors.append(f"{predecessor} transition judgment blocking_findings must be an array")
+    elif any(isinstance(finding, dict) and finding.get("severity") in {"high", "critical"} for finding in findings):
+        errors.append(f"{predecessor} transition judgment has unresolved high or critical findings")
+    binding = data.get("phase_receipt_bindings", {}).get(predecessor) if isinstance(data.get("phase_receipt_bindings"), dict) else None
+    if not isinstance(binding, dict) or judgment.get("phase_receipt_sha256") != binding.get("receipt_sha256"):
+        errors.append(f"{predecessor} transition judgment must bind the predecessor VALID receipt SHA-256")
+    excluded_ids = set(agent_ids(data.get("trace_audits")))
+    excluded_ids |= {
+        entry.get("agent_id")
+        for entry in data.get("phase_retrospectives", [])
+        if isinstance(entry, dict) and nonempty(entry.get("agent_id"))
+    }
+    if not nonempty(judgment.get("agent_id")) or judgment.get("agent_id") in excluded_ids:
+        errors.append(f"{predecessor} transition judge must be independent of auditors")
+    unresolved_hard_stops = data.get("unresolved_hard_stops", [])
+    if not isinstance(unresolved_hard_stops, list):
+        errors.append("unresolved_hard_stops must be an array")
+    elif any(item in policy.get("hard_stop_categories", []) for item in unresolved_hard_stops):
+        errors.append("unresolved hard-stop category blocks autonomous transition")
+    decisions = data.get("automation_decisions")
+    if not isinstance(decisions, list):
+        errors.append("automation_decisions must be an array")
+    elif not any(
+        isinstance(entry, dict)
+        and entry.get("from_phase") == predecessor
+        and entry.get("to_phase") == target_phase
+        and entry.get("decision") == "auto_proceed"
+        and entry.get("judge_receipt_sha256") == judgment.get("result_sha256")
+        and timestamp(entry.get("decided_at")) is not None
+        for entry in decisions
+    ):
+        errors.append(f"{predecessor} requires a bound auto_proceed automation decision")
 
 
 def validate_retrospective_gate(data: dict[str, Any], phase: str, errors: list[str]) -> None:
@@ -1131,6 +1210,12 @@ def validate(data: dict[str, Any], phase: str, skip_remote: bool) -> list[str]:
             errors.append("remote_checks_reported must be true")
 
     validate_retrospective_gate(data, phase, errors)
+    if phase == "plan":
+        validate_transition_gate(data, "plan", errors)
+    elif phase in {"orchestrate-preapproval", "implement"}:
+        validate_transition_gate(data, "implement", errors)
+    elif phase == "review":
+        validate_transition_gate(data, "review", errors)
     add_handoff_error(data, phase, errors)
     return errors
 

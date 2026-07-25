@@ -30,6 +30,16 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "initial_spec_hashes": {},
   "approved_artifact_hosts": [],
   "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
+  "automation_policy": {
+    "default_mode": "autonomous",
+    "auto_transition_min_confidence": 8,
+    "stop_before_phases": [],
+    "released_stop_gates": [],
+    "hard_stop_categories": ["protected_external_write", "destructive_or_irreversible", "production_or_release", "missing_authority"]
+  },
+  "phase_transition_judgments": [],
+  "automation_decisions": [],
+  "unresolved_hard_stops": [],
   "phase_retrospectives": [],
   "retrospective_baseline": {},
   "initiative_identity": {
@@ -160,6 +170,38 @@ Use the fixed rubric and recorder in `continuous-improvement.md`. A Plan validat
 completed Research retrospective; Implement requires Research and Plan; Review requires Research,
 Plan, and Implement. Each item needs evidence for every rubric dimension. A below-threshold or
 degraded score must include rechecked remediation before its successor phase can validate.
+
+## Autonomous Transition Judgments
+
+The workflow defaults to autonomous transition. A human can add `plan`, `implement`, or `review`
+to `automation_policy.stop_before_phases` at any time. That stops the named successor even if its
+judge gives a 10/10. Resuming requires a `released_stop_gates` entry with `phase`, `released_at`,
+and the exact `user_evidence`.
+
+Each predecessor phase records a fresh Phase Transition Judge receipt bound to that predecessor's
+first `VALID` receipt:
+
+```json
+{
+  "phase": "plan",
+  "successor_phase": "implement",
+  "agent_id": "independent-judge-id",
+  "status": "pass",
+  "recommendation": "proceed",
+  "confidence": 8,
+  "technical_accuracy_score": 3,
+  "evidence_ids": ["E1", "E2"],
+  "blocking_findings": [],
+  "completed_at": "2026-07-25T12:00:00Z",
+  "phase_receipt_sha256": "64 lowercase hex characters",
+  "result_sha256": "64 lowercase hex characters"
+}
+```
+
+An `automation_decisions` entry binds `auto_proceed` to the judge's `result_sha256`. The validator
+rejects confidence below 8, a non-integer confidence, technical accuracy below 3/4, high/critical
+findings, stale receipt bindings, judge/auditor identity overlap, open human stops, and unresolved
+hard-stop categories.
 
 ### Realtime execution-audit receipt
 

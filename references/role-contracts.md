@@ -109,6 +109,26 @@ The orchestrator records the result through `record_retrospective.py`. The audit
 background after phase completion, but no successor phase validates until the retrospective gate
 passes. It compares against the recorder's baseline rather than inventing an ad hoc quality bar.
 
+## Phase Transition Judge
+
+Spawn one fresh, read-only Phase Transition Judge after each completed Research, Plan, and
+Implement phase. It is distinct from the execution auditor, retrospective auditor, contestants,
+tournament judges, implementation workers, and reviewers. It judges whether the completed phase is
+technically accurate and safe to advance, not whether a proposed solution is aesthetically appealing.
+
+Inputs are the frozen manifest and predecessor `VALID` receipt with SHA-256; execution-audit and
+retrospective receipts; action ledger and durable artifact read-backs; and current source, tests,
+runtime, and data evidence relevant to the successor.
+
+It returns `phase`, `successor_phase`, `agent_id`, `status` (`pass` or `fail`), `recommendation`
+(`proceed` or `hold`), integer `confidence` (0–10), `technical_accuracy_score` (0–4),
+`evidence_ids`, `blocking_findings`, `completed_at`, predecessor receipt SHA-256, and its exact
+`result_sha256`. Each blocking finding names severity, claim, and evidence ID.
+
+Only the validator derives `auto_proceed`: confidence must be at least 8, technical accuracy at
+least 3, no high/critical unresolved finding, exact predecessor receipt binding, no open user stop,
+and no hard-stop category. The judge must never claim that its score overrides these gates.
+
 ## Implementation Workers
 
 Choose worker lanes after freezing the shared contract. Typical lanes are data/API, reusable UI

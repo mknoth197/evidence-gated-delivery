@@ -16,6 +16,13 @@ RESEARCH -> research artifact -> PLAN -> implementation artifact -> IMPLEMENT ->
 Every phase must revalidate its input against current reality. Durable artifacts, not chat memory,
 carry authority between phases.
 
+By default, `orchestrate` proceeds autonomously from Research through Plan and Implementation when
+every deterministic gate passes and a fresh independent Phase Transition Judge rates the completed
+phase at least `8/10` for confidence and `3/4` for technical accuracy. A user may request a stop
+before `plan`, `implement`, or `review` at any time; that explicit stop wins over automation until
+the user releases it. Protected external writes, destructive or irreversible actions, production
+or release actions, and missing authority remain hard stops and are never bypassed by a score.
+
 Read [phase-contracts.md](references/phase-contracts.md) and
 [run-manifest.md](references/run-manifest.md) when beginning a run. Read only the active phase plus
 Shared Rules from the phase contracts. Read [role-contracts.md](references/role-contracts.md) before
@@ -182,6 +189,26 @@ Treat a score below 85/100, either evidence/verification dimension below 3/4, or
 regression from the stored baseline as a remediation gate. Record and recheck remediation; never
 reduce the threshold to make a run appear healthy.
 
+### Autonomous Transitions And Human Stops
+
+At each Research → Plan, Plan → Implement, and Implement → Review boundary, dispatch one fresh
+read-only **Phase Transition Judge** after the predecessor's execution audit and retrospective.
+The judge is independent from those auditors and receives the frozen manifest, predecessor `VALID`
+receipt SHA-256, action ledger, relevant artifact read-backs, and current code/runtime/test evidence.
+It must return a structured technical-accuracy assessment, evidence IDs, blocking findings, a
+confidence integer from 0 through 10, and a `proceed` or `hold` recommendation.
+
+The validator may authorize `auto_proceed` only at confidence `8..10`, technical accuracy `3/4` or
+higher, no unresolved high or critical findings, no hard stop, and a decision bound to the judge's
+exact response hash. Confidence is judgment evidence, never a substitute for the validator,
+execution audit, retrospective, repository instructions, or protected-system authority.
+
+Default `automation_policy` is autonomous with `stop_before_phases: []`. On a user request such as
+“stop before Implementation”, add `implement` to that list and report the completed predecessor
+with a `human_stop` decision; do not start the successor. Resume only after a new explicit user
+instruction is recorded in `released_stop_gates` with its timestamp and exact evidence. Interpret
+`implementation` as `implement`; do not infer a release from silence or a previous general request.
+
 ### Parallelism
 
 - Freeze shared contracts before parallel work.
@@ -317,10 +344,12 @@ Before mutation:
    interfaces, ownership, dependency order, and quality gates.
 4. Identify plan-versus-reality conflicts and resolve them explicitly.
 5. Present the frozen contract, worker map, stop gates, and protected external systems.
-6. Stop for explicit approval before branch creation, issue mutation, file edits, or external
-   writes unless the user already explicitly approved implementation in this invocation.
+6. With the default autonomous policy, begin internal implementation only after the validated Plan
+   transition judgment authorizes `auto_proceed`. If a user stop gate is open, stop before any
+   successor mutation. Do not use autonomous transition authority for protected external writes,
+   destructive or irreversible actions, production or release changes, or a missing authority.
 
-Approval to implement does not imply approval to mutate protected external systems.
+An autonomous implementation transition does not imply approval to mutate protected external systems.
 
 ### Execution
 

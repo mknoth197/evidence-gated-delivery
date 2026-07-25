@@ -15,6 +15,7 @@ tests, independent review, validator receipts, and explicit stop gates make outc
 - External-action verification: a staged upload or optimistic UI is never treated as complete.
 - Independent execution audits before phase transitions.
 - Phase retrospectives with a fixed, evidence-backed rubric and degradation detection.
+- Autonomous phase transitions only after an independent technical-confidence judgment passes.
 
 ## Continuous improvement
 
@@ -33,6 +34,20 @@ Every completed phase has an independent retrospective. The rubric uses seven fi
 The next phase is blocked below 85/100, when either evidence or external verification is below
 3/4, or when the score drops five points from the prior baseline. Remediation must be recorded and
 rechecked; the threshold is never lowered to hide degradation.
+
+## Autonomous transitions and stop gates
+
+The default policy is autonomous: Research → Plan → Implement proceeds without a human approval
+prompt only after the predecessor has a `VALID` receipt, execution audit, retrospective, and a
+fresh Phase Transition Judge. That judge must independently find the phase technically accurate
+(`3/4` or higher), return an integer confidence of `8/10` or higher, identify no unresolved high or
+critical finding, and bind its judgment to the predecessor receipt hash. The validator—not the
+judge—derives the final `auto_proceed` decision.
+
+Users can request a human stop before `plan`, `implement`, or `review`. A stop gate always wins,
+even over a 10/10 judgment, and requires a later explicit user release recorded in the run manifest.
+Autonomy never authorizes protected external writes, destructive or irreversible actions,
+production/release changes, or work with missing authority.
 
 ## Layout
 

@@ -48,6 +48,65 @@ class FakeResponse:
 
 
 class PublicationTests(unittest.TestCase):
+    def transition_data(self, confidence=8, stops=None, findings=None):
+        receipt_sha = "a" * 64
+        return {
+            "automation_policy": {
+                "default_mode": "autonomous",
+                "auto_transition_min_confidence": 8,
+                "stop_before_phases": stops or [],
+                "released_stop_gates": [],
+                "hard_stop_categories": ["protected_external_write"],
+            },
+            "phase_receipt_bindings": {"research": {"receipt_sha256": receipt_sha}},
+            "phase_transition_judgments": [{
+                "phase": "research",
+                "successor_phase": "plan",
+                "agent_id": "transition-judge",
+                "status": "pass",
+                "recommendation": "proceed",
+                "confidence": confidence,
+                "technical_accuracy_score": 3,
+                "evidence_ids": ["E1"],
+                "blocking_findings": findings or [],
+                "completed_at": "2026-07-25T12:00:00Z",
+                "phase_receipt_sha256": receipt_sha,
+                "result_sha256": "b" * 64,
+            }],
+            "phase_retrospectives": [],
+            "trace_audits": [],
+            "unresolved_hard_stops": [],
+            "automation_decisions": [{
+                "from_phase": "research",
+                "to_phase": "plan",
+                "decision": "auto_proceed",
+                "judge_receipt_sha256": "b" * 64,
+                "decided_at": "2026-07-25T12:01:00Z",
+            }],
+        }
+
+    def test_transition_judge_allows_exact_threshold(self):
+        errors: list[str] = []
+        validator.validate_transition_gate(self.transition_data(), "plan", errors)
+        self.assertEqual(errors, [])
+
+    def test_transition_judge_rejects_below_threshold_and_high_finding(self):
+        errors: list[str] = []
+        validator.validate_transition_gate(self.transition_data(confidence=7), "plan", errors)
+        self.assertTrue(any("integer from 8" in error for error in errors))
+        errors = []
+        validator.validate_transition_gate(
+            self.transition_data(findings=[{"severity": "high", "claim": "missing test"}]),
+            "plan",
+            errors,
+        )
+        self.assertTrue(any("high or critical" in error for error in errors))
+
+    def test_human_stop_gate_overrides_high_confidence(self):
+        errors: list[str] = []
+        validator.validate_transition_gate(self.transition_data(stops=["plan"]), "plan", errors)
+        self.assertTrue(any("human stop gate" in error for error in errors))
+
     def test_rejects_hostname_spoof(self):
         self.assertFalse(preflight.approved_url("https://evil.example/openai.site/image.png", []))
 
