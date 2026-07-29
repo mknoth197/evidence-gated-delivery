@@ -25,6 +25,12 @@ flowchart LR
     Input --> Behavior --> Outcome
 ```
 
+Visual disposition: `<none|runtime_capture|generative_mockup>`
+
+Scope inventory SHA-256: `<64 lowercase hex characters>`
+
+For `runtime_capture`, list current runtime evidence. For `generative_mockup`, include:
+
 Final mockup: <durable HTTPS URL>
 
 Final mockup SHA-256: `<64 lowercase hex characters>`
@@ -36,8 +42,10 @@ Final mockup SHA-256: `<64 lowercase hex characters>`
 
 ## Tasks
 
-- [ ] <Agent-sized implementation task>
-- [ ] <Verification task>
+- [ ] **T-001 — <Task title>.** Objective: <bounded outcome>. Context: <why and constraints>.
+  Affected modules: `<path or module>`. Requirements: <observable behavior>. Verification:
+  <targeted and canonical checks>. Complete when: <handoff condition>. Owner lane: <lane>.
+  `depends_on: []`.
 
 ## Out of Scope
 
@@ -45,7 +53,7 @@ Final mockup SHA-256: `<64 lowercase hex characters>`
 
 ## Mockup Accounting Matrix
 
-| Visual Requirement | Acceptance Criterion | Task | Verification |
+| Visual or Scope Requirement | Acceptance Criterion | Task | Verification |
 | --- | --- | --- | --- |
 | <Normative element> | <Criterion> | <Task> | <Test or inspection> |
 

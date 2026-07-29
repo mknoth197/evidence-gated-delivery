@@ -19,6 +19,28 @@ from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from visual_applicability import validate_disposition
+from plan_protocol import (
+    PLAN_PROTOCOL_V1,
+    PLAN_PROTOCOL_V2,
+    PlanProtocolError,
+    evaluate_graph_policy,
+    issue_body_sha256,
+    parse_tasks,
+    privacy_violations,
+    reconcile_graph_state,
+    validate_graph_draft,
+    validate_plan_audits,
+    validate_plan_events,
+    validate_protocol_version,
+    verify_final_graph,
+    verify_graph_authorization,
+)
+
 GITHUB_ISSUE_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+/issues/\d+$")
 GITHUB_PR_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+/pull/\d+$")
 AGENT_ID_RE = re.compile(
@@ -346,6 +368,150 @@ def realtime_delegated_audit_evidence(
     }, None
 
 
+def collaboration_delegated_audit_evidence(
+    data: dict[str, Any], audit: dict[str, Any]
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Authenticate Desktop collaboration evidence across parent and child traces."""
+    parent_id = data.get("parent_thread_id")
+    agent_id = audit.get("agent_id")
+    agent_path = audit.get("agent_path")
+    if not nonempty(parent_id) or not nonempty(agent_id) or not nonempty(agent_path):
+        return None, "collaboration audit needs parent_thread_id, agent_id, and agent_path"
+    if not AGENT_ID_RE.fullmatch(agent_id.strip()):
+        return None, "collaboration auditor must use a UUID agent_id"
+    if not re.fullmatch(r"/[a-z0-9_]+/[a-z0-9_]+", agent_path.strip()):
+        return None, "collaboration auditor must use a depth-one agent_path"
+
+    child, child_error = agent_session_evidence(agent_id.strip())
+    if child_error:
+        return None, child_error
+    assert child is not None
+    child_meta = child["session_meta"]
+    spawn_meta = child_meta.get("source", {}).get("subagent", {}).get("thread_spawn", {})
+    if child_meta.get("thread_source") != "subagent" or spawn_meta.get("depth") != 1:
+        return None, "collaboration auditor child must be a depth-one Codex subagent"
+    if spawn_meta.get("parent_thread_id") != parent_id:
+        return None, "collaboration auditor child does not belong to the current parent thread"
+    if spawn_meta.get("agent_path") != agent_path:
+        return None, "collaboration auditor child agent_path mismatch"
+
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    parent_files = list((codex_home / "sessions").rglob(f"*{parent_id}.jsonl"))
+    if len(parent_files) != 1:
+        return None, f"expected one parent rollout session for {parent_id}, found {len(parent_files)}"
+
+    parent_meta: dict[str, Any] | None = None
+    started_at: str | None = None
+    spawn_event_id: str | None = None
+    delegation_arguments: Any = None
+    callback_message: str | None = None
+    try:
+        records = [json.loads(line) for line in parent_files[0].read_text().splitlines()]
+        for item in records:
+            payload = item.get("payload", {})
+            if item.get("type") == "session_meta" and payload.get("id") == parent_id:
+                parent_meta = payload
+            if item.get("type") == "event_msg" and payload.get("type") == "sub_agent_activity":
+                if (
+                    payload.get("agent_thread_id") == agent_id
+                    and payload.get("agent_path") == agent_path
+                    and payload.get("kind") == "started"
+                ):
+                    started_at = item.get("timestamp")
+                    spawn_event_id = payload.get("event_id")
+            if item.get("type") == "response_item" and payload.get("type") == "agent_message":
+                if payload.get("author") == agent_path and payload.get("recipient") == "/root":
+                    text = "\n".join(
+                        block.get("text", "")
+                        for block in payload.get("content", [])
+                        if isinstance(block, dict)
+                    )
+                    if "Payload:\n" in text:
+                        callback_message = text.split("Payload:\n", 1)[1]
+        spawn_call_seen = False
+        if nonempty(spawn_event_id):
+            for item in records:
+                payload = item.get("payload", {})
+                if (
+                    item.get("type") == "response_item"
+                    and payload.get("type") == "function_call"
+                    and payload.get("namespace") == "collaboration"
+                    and payload.get("name") == "spawn_agent"
+                    and payload.get("call_id") == spawn_event_id
+                ):
+                    spawn_call_seen = True
+                    delegation_arguments = payload.get("arguments")
+                    break
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+
+    if parent_meta is None:
+        return None, "parent session metadata ID mismatch"
+    if started_at is None or not spawn_call_seen:
+        return None, "parent trace lacks the matching collaboration spawn call and start event"
+    if not nonempty(callback_message):
+        return None, "parent trace lacks the matching collaboration completed callback"
+    if callback_message != child["final_message"]:
+        return None, "parent callback does not match child task completion"
+    return {
+        "final_message": callback_message,
+        "session_meta": child_meta,
+        "completed_at": child.get("completed_at"),
+        "delegation_started_at": started_at,
+        "parent_session_meta": parent_meta,
+        "delegation_arguments": delegation_arguments,
+    }, None
+
+
+def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> bool:
+    """Match a role against plaintext prompt text or the persisted task-name marker.
+
+    Desktop may encrypt the message value in the parent trace. The task_name stays
+    visible, so auditor task names are also a required, machine-readable role marker.
+    """
+
+    parsed: dict[str, Any] = {}
+    if isinstance(arguments, dict):
+        parsed = arguments
+    elif isinstance(arguments, str):
+        try:
+            value = json.loads(arguments)
+        except json.JSONDecodeError:
+            value = None
+        if isinstance(value, dict):
+            parsed = value
+        elif expected_marker.lower() in arguments.lower():
+            return True
+    message = parsed.get("message")
+    if isinstance(message, str) and expected_marker.lower() in message.lower():
+        return True
+    task_name = str(parsed.get("task_name", "")).lower()
+    tokens = set(re.findall(r"[a-z0-9]+", task_name))
+    if expected_marker == "Independent Plan spec auditor":
+        return bool(
+            re.fullmatch(
+                r"independent_plan_spec_auditor(?:_[a-z0-9]+)*", task_name
+            )
+            and not tokens & {"execution", "phase", "transition"}
+        )
+    transition = re.fullmatch(
+        r"phase transition judge: ([a-z-]+) -> ([a-z-]+)", expected_marker
+    )
+    if transition:
+        expected_task_name = (
+            "phase_transition_judge_"
+            f"{transition.group(1).replace('-', '_')}_to_"
+            f"{transition.group(2).replace('-', '_')}"
+        )
+        return task_name == expected_task_name
+    match = re.fullmatch(r"Execution auditor phase: ([a-z-]+)", expected_marker)
+    return bool(
+        match
+        and match.group(1).replace("-", "_") in task_name
+        and ("audit" in tokens or "auditor" in tokens)
+    )
+
+
 def spec_hashes(root: Path) -> dict[str, str]:
     spec_root = root / ".github" / "specs"
     if not spec_root.exists():
@@ -366,6 +532,10 @@ def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str]) ->
         if isinstance(audit, dict) and audit.get("phase") == required_phase
     ]
     realtime = len(matching) == 1 and matching[0].get("receipt_kind") == "realtime_delegated"
+    collaboration = (
+        len(matching) == 1
+        and matching[0].get("receipt_kind") == "collaboration_delegated"
+    )
     valid_audit = realtime or (len(matching) == 1 and completed_agent(matching[0]))
     if not valid_audit:
         errors.append(f"exactly one completed {required_phase} trace audit is required")
@@ -383,6 +553,8 @@ def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str]) ->
         return
     if realtime:
         evidence, session_error = realtime_delegated_audit_evidence(data, matching[0])
+    elif collaboration:
+        evidence, session_error = collaboration_delegated_audit_evidence(data, matching[0])
     else:
         evidence, session_error = agent_session_evidence(matching[0]["agent_id"])
     if session_error:
@@ -391,7 +563,20 @@ def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str]) ->
     assert evidence is not None
     final_message = evidence["final_message"]
     session_meta = evidence["session_meta"]
-    if not realtime:
+    if collaboration:
+        expected_marker = f"Execution auditor phase: {required_phase}"
+        if matching[0].get("role_marker") != expected_marker:
+            errors.append(
+                f"{required_phase} collaboration auditor receipt lacks the required role marker"
+            )
+        if not persisted_delegation_role_matches(
+            evidence.get("delegation_arguments"), expected_marker
+        ):
+            errors.append(
+                f"{required_phase} collaboration auditor persisted delegation prompt "
+                "lacks the required role marker"
+            )
+    elif not realtime:
         prompt = evidence["prompt"]
         subagent = session_meta.get("source", {}).get("subagent", {}).get("thread_spawn", {})
         if session_meta.get("thread_source") != "subagent" or subagent.get("depth") != 1:
@@ -404,7 +589,9 @@ def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str]) ->
     elif matching[0].get("role_marker") != f"Execution auditor phase: {required_phase}":
         errors.append(f"{required_phase} realtime auditor receipt lacks the required role marker")
     session_started = timestamp(
-        evidence.get("delegation_started_at") if realtime else session_meta.get("timestamp")
+        evidence.get("delegation_started_at")
+        if realtime or collaboration
+        else session_meta.get("timestamp")
     )
     run_started = timestamp(data.get("run_started_at"))
     if session_started is None or run_started is None or session_started < run_started:
@@ -628,7 +815,11 @@ def validate_image_receipts(
         errors.append(f"{label} must cover every candidate exactly once")
 
 
-def validate_plan_identity_and_evidence(data: dict[str, Any], errors: list[str]) -> None:
+def validate_plan_identity_and_evidence(
+    data: dict[str, Any],
+    errors: list[str],
+    visual_mode: str = "generative_mockup",
+) -> None:
     identity = data.get("initiative_identity")
     if not isinstance(identity, dict):
         errors.append("initiative_identity is required for Plan and later phases")
@@ -642,9 +833,9 @@ def validate_plan_identity_and_evidence(data: dict[str, Any], errors: list[str])
             errors.append("initiative_identity.implementation_issue_url must match implementation_issue_url")
 
     grounding = data.get("visual_grounding")
-    if not isinstance(grounding, list) or not grounding:
+    if visual_mode != "none" and (not isinstance(grounding, list) or not grounding):
         errors.append("visual_grounding must contain a current product-shell observation")
-    else:
+    elif isinstance(grounding, list):
         for index, item in enumerate(grounding):
             if not isinstance(item, dict):
                 errors.append(f"visual_grounding[{index}] must be an object")
@@ -664,10 +855,11 @@ def validate_plan_identity_and_evidence(data: dict[str, Any], errors: list[str])
                 errors.append(f"visual_grounding[{index}].screenshot_path must be an existing file")
 
     required_actions = {
-        "final-mockup-publication": "durable_mockup_publication",
         "plan-issue-readback": "github_issue_readback",
         "research-issue-readback": "github_issue_readback",
     }
+    if visual_mode == "generative_mockup":
+        required_actions["final-mockup-publication"] = "durable_mockup_publication"
     actions = data.get("external_actions")
     if not isinstance(actions, list):
         errors.append("external_actions must be an array")
@@ -688,9 +880,395 @@ def validate_plan_identity_and_evidence(data: dict[str, Any], errors: list[str])
                 errors.append(f"external_actions.{action_id}.{field} is required")
 
 
-def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) -> None:
+def _gh_json(arguments: list[str]) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        completed = subprocess.run(
+            ["gh", *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return None, str(exc)
+    if completed.returncode != 0:
+        return None, completed.stderr.strip() or "gh command failed"
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return None, f"gh returned invalid JSON: {exc}"
+    if not isinstance(value, dict):
+        return None, "gh response must be a JSON object"
+    return value, None
+
+
+def _remote_graph_state(
+    implementation_url: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    match = re.fullmatch(
+        r"https://github\.com/([^/]+)/([^/]+)/issues/(\d+)",
+        implementation_url,
+    )
+    if match is None:
+        return None, "implementation issue URL cannot identify graph repository and parent"
+    owner, repository_name, parent_number = match.groups()
+    repository = f"{owner}/{repository_name}"
+    parent, error = _gh_json(
+        [
+            "issue",
+            "view",
+            parent_number,
+            "--repo",
+            repository,
+            "--json",
+            "url,subIssues",
+        ]
+    )
+    if error:
+        return None, error
+    assert parent is not None
+    children: list[dict[str, Any]] = []
+    task_by_url: dict[str, str] = {}
+    raw_children = parent.get("subIssues")
+    if not isinstance(raw_children, list):
+        return None, "parent issue read-back lacks subIssues"
+    child_payloads: list[dict[str, Any]] = []
+    for child_summary in raw_children:
+        if not isinstance(child_summary, dict) or not isinstance(
+            child_summary.get("number"), int
+        ):
+            return None, "parent subIssues contains a malformed child"
+        child, child_error = _gh_json(
+            [
+                "issue",
+                "view",
+                str(child_summary["number"]),
+                "--repo",
+                repository,
+                "--json",
+                "url,title,body,parent,blockedBy,blocking",
+            ]
+        )
+        if child_error:
+            return None, child_error
+        assert child is not None
+        marker = re.search(
+            r"<!-- evidence-gated-delivery-task:(T-\d{3}) -->",
+            str(child.get("body", "")),
+        )
+        if marker is None:
+            return None, f"child {child.get('url')} lacks a stable task marker"
+        task_id = marker.group(1)
+        if task_id in task_by_url.values():
+            return None, f"duplicate stable task marker {task_id}"
+        task_by_url[str(child.get("url"))] = task_id
+        child_payloads.append(child)
+        parent_value = child.get("parent")
+        parent_url = (
+            parent_value.get("url")
+            if isinstance(parent_value, dict)
+            else None
+        )
+        children.append(
+            {
+                "task_id": task_id,
+                "stable_marker": marker.group(0),
+                "title": child.get("title"),
+                "body_sha256": issue_body_sha256(str(child.get("body", ""))),
+                "parent_issue_url": parent_url,
+            }
+        )
+    edges: list[dict[str, str]] = []
+    for child in child_payloads:
+        blocked_match = re.search(
+            r"<!-- evidence-gated-delivery-task:(T-\d{3}) -->",
+            str(child.get("body", "")),
+        )
+        assert blocked_match is not None
+        blocked = blocked_match.group(1)
+        blocked_by = child.get("blockedBy")
+        if not isinstance(blocked_by, list):
+            return None, f"child {child.get('url')} lacks blockedBy read-back"
+        for blocker in blocked_by:
+            blocker_url = blocker.get("url") if isinstance(blocker, dict) else None
+            blocker_id = task_by_url.get(str(blocker_url))
+            if blocker_id is None:
+                return None, f"child {child.get('url')} has an unknown blocker"
+            blocker_child = next(
+                (
+                    payload
+                    for payload in child_payloads
+                    if task_by_url.get(str(payload.get("url"))) == blocker_id
+                ),
+                None,
+            )
+            blocking = blocker_child.get("blocking") if blocker_child else None
+            blocked_url = str(child.get("url"))
+            blocking_urls = {
+                str(value.get("url"))
+                for value in blocking or []
+                if isinstance(value, dict)
+            }
+            if not isinstance(blocking, list) or blocked_url not in blocking_urls:
+                return None, (
+                    f"dependency symmetry mismatch: {blocker_id} does not report "
+                    f"{blocked} in blocking"
+                )
+            edges.append({"blocked": blocked, "blocked_by": blocker_id})
+    return {"children": children, "edges": edges}, None
+
+
+def _live_graph_capabilities() -> tuple[dict[str, Any] | None, str | None]:
+    commands = {
+        "version": ["gh", "--version"],
+        "create": ["gh", "issue", "create", "--help"],
+        "edit": ["gh", "issue", "edit", "--help"],
+        "view": ["gh", "issue", "view", "--help"],
+    }
+    outputs: dict[str, str] = {}
+    for key, command in commands.items():
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            return None, str(exc)
+        if completed.returncode != 0:
+            return None, completed.stderr.strip() or f"{' '.join(command)} failed"
+        outputs[key] = completed.stdout
+    view_help = outputs["view"]
+    required_fields = ("parent", "subIssues", "blockedBy", "blocking")
+    return {
+        "gh_version": outputs["version"].splitlines()[0].strip(),
+        "native_parent_supported": "--parent" in outputs["create"],
+        "blocking_supported": "--add-blocked-by" in outputs["edit"],
+        "readback_supported": all(field in view_help for field in required_fields),
+    }, None
+
+
+def validate_plan_protocol_evidence(
+    data: dict[str, Any],
+    implementation_body: str,
+    errors: list[str],
+    *,
+    skip_remote: bool,
+) -> None:
+    protocol_errors = validate_protocol_version(data)
+    errors.extend(protocol_errors)
+    if protocol_errors or data.get("plan_protocol_version", PLAN_PROTOCOL_V1) != PLAN_PROTOCOL_V2:
+        return
+    for field in (
+        "plan_audits",
+        "graph_draft",
+        "graph_authorization",
+        "graph_actions",
+        "graph_remote_state",
+    ):
+        for violation in privacy_violations(data.get(field), f"$.{field}"):
+            errors.append(f"privacy sentinel: {violation}")
+    events = data.get("plan_events")
+    event_errors = validate_plan_events(events)
+    errors.extend(event_errors)
+    event_types = {
+        event.get("type")
+        for event in events
+        if isinstance(event, dict)
+    } if isinstance(events, list) else set()
+    if not event_errors:
+        if not event_types & {"protocol_initialized", "protocol_migrated"}:
+            errors.append("plan_events must record protocol initialization or migration")
+        for event_type in (
+            "candidate_linted",
+            "audit_completed",
+            "issue_read_back",
+            "graph_policy_evaluated",
+        ):
+            if event_type not in event_types:
+                errors.append(f"plan_events must include {event_type}")
+    try:
+        tasks = parse_tasks(implementation_body)
+    except PlanProtocolError as exc:
+        errors.append(f"plan-protocol/v2 task grammar failed: {exc}")
+        return
+    remote_body_sha = issue_body_sha256(implementation_body)
+    disallowed_ids = set(agent_ids(data.get("contestants")))
+    disallowed_ids |= set(agent_ids(data.get("judges")))
+    disallowed_ids |= set(agent_ids(data.get("trace_audits")))
+    disallowed_ids |= set(agent_ids(data.get("implementation_workers")))
+    disallowed_ids |= {
+        entry.get("agent_id")
+        for key in ("phase_retrospectives", "phase_transition_judgments")
+        for entry in data.get(key, [])
+        if isinstance(entry, dict) and nonempty(entry.get("agent_id"))
+    }
+    errors.extend(
+        validate_plan_audits(
+            data.get("plan_audits"),
+            final_body_sha256=remote_body_sha,
+            disallowed_agent_ids=disallowed_ids,
+        )
+    )
+    plan_audits = data.get("plan_audits")
+    if isinstance(plan_audits, list):
+        for index, audit in enumerate(plan_audits):
+            prefix = f"plan_audits[{index}]"
+            if not isinstance(audit, dict):
+                continue
+            if audit.get("receipt_kind") != "collaboration_delegated":
+                errors.append(f"{prefix} must use collaboration_delegated provenance")
+                continue
+            if audit.get("status") != "completed":
+                errors.append(f"{prefix}.status must be completed")
+            evidence, session_error = collaboration_delegated_audit_evidence(data, audit)
+            if session_error:
+                errors.append(f"{prefix} session verification failed: {session_error}")
+                continue
+            assert evidence is not None
+            callback = evidence["final_message"]
+            expected_marker = "Independent Plan spec auditor"
+            if not persisted_delegation_role_matches(
+                evidence.get("delegation_arguments"), expected_marker
+            ):
+                errors.append(
+                    f"{prefix} persisted delegation prompt lacks the required role marker"
+                )
+            if audit.get("callback_sha256") != hashlib.sha256(callback.encode()).hexdigest():
+                errors.append(f"{prefix}.callback_sha256 does not match authenticated callback")
+            if timestamp(audit.get("started_at")) != timestamp(
+                evidence.get("delegation_started_at")
+            ):
+                errors.append(f"{prefix}.started_at does not match delegation")
+            if timestamp(audit.get("completed_at")) != timestamp(
+                evidence.get("completed_at")
+            ):
+                errors.append(f"{prefix}.completed_at does not match child completion")
+            for evidence_id in audit.get("evidence_ids", []):
+                if nonempty(evidence_id) and evidence_id not in callback:
+                    errors.append(
+                        f"{prefix} authenticated callback does not name {evidence_id}"
+                    )
+    computed_policy = evaluate_graph_policy(tasks, evaluated_at="2000-01-01T00:00:00Z")
+    recorded_policy = data.get("graph_policy_receipt")
+    for field in (
+        "policy_version",
+        "disposition",
+        "task_count",
+        "edge_count",
+        "owner_lanes",
+        "task_set_sha256",
+    ):
+        if not isinstance(recorded_policy, dict) or recorded_policy.get(field) != computed_policy[field]:
+            errors.append(f"graph_policy_receipt.{field} does not match authoritative tasks")
+    if not isinstance(recorded_policy, dict) or timestamp(recorded_policy.get("evaluated_at")) is None:
+        errors.append("graph_policy_receipt.evaluated_at must be an ISO-8601 timestamp")
+    if computed_policy["disposition"] == "NO_GRAPH":
+        return
+    for event_type in (
+        "graph_draft_frozen",
+        "graph_authorized",
+        "graph_action_recorded",
+        "graph_reconciled",
+    ):
+        if event_type not in event_types:
+            errors.append(f"GRAPH_REQUIRED plan_events must include {event_type}")
+
+    draft = data.get("graph_draft")
+    errors.extend(validate_graph_draft(draft))
+    capability = data.get("graph_capability_receipt")
+    authorization = data.get("graph_authorization")
+    repository_match = re.fullmatch(
+        r"https://github\.com/([^/]+/[^/]+)/issues/\d+",
+        data.get("implementation_issue_url", ""),
+    )
+    repository = repository_match.group(1) if repository_match else ""
+    login = capability.get("github_login", "") if isinstance(capability, dict) else ""
+    account_id = (
+        str(capability.get("github_account_id", ""))
+        if isinstance(capability, dict)
+        else ""
+    )
+    if not skip_remote:
+        identity, identity_error = _gh_json(["api", "user"])
+        if identity_error:
+            errors.append(f"GitHub identity read-back failed: {identity_error}")
+        else:
+            assert identity is not None
+            login = str(identity.get("login", ""))
+            account_id = str(identity.get("id", ""))
+        repository_readback, repository_error = _gh_json(
+            ["repo", "view", repository, "--json", "nameWithOwner"]
+        )
+        if repository_error:
+            errors.append(f"GitHub repository read-back failed: {repository_error}")
+        elif repository_readback.get("nameWithOwner") != repository:
+            errors.append("GitHub repository read-back does not match the graph repository")
+        live_capabilities, capability_error = _live_graph_capabilities()
+        if capability_error:
+            errors.append(f"GitHub graph capability preflight failed: {capability_error}")
+        else:
+            assert live_capabilities is not None
+            for field, observed in live_capabilities.items():
+                if not isinstance(capability, dict) or capability.get(field) != observed:
+                    errors.append(
+                        f"graph_capability_receipt.{field} does not match live gh capability"
+                    )
+            if not all(
+                live_capabilities[field]
+                for field in (
+                    "native_parent_supported",
+                    "blocking_supported",
+                    "readback_supported",
+                )
+            ):
+                errors.append("live gh lacks required native graph capabilities")
+    if isinstance(draft, dict) and isinstance(capability, dict):
+        errors.extend(
+            verify_graph_authorization(
+                authorization,
+                draft,
+                current_login=login,
+                current_account_id=account_id,
+                current_repository=repository,
+                current_parent_issue_url=data.get("implementation_issue_url", ""),
+                capability_receipt=capability,
+            )
+        )
+        recorded_remote_state = data.get("graph_remote_state")
+        if not skip_remote:
+            live_state, live_error = _remote_graph_state(
+                data.get("implementation_issue_url", "")
+            )
+            if live_error:
+                errors.append(f"remote graph read-back failed: {live_error}")
+            elif live_state != recorded_remote_state:
+                errors.append("graph_remote_state does not match authenticated GitHub read-back")
+        if isinstance(recorded_remote_state, dict):
+            reconciliation = reconcile_graph_state(draft, recorded_remote_state)
+            if reconciliation.get("classification") != "EXACT_MATCH":
+                errors.append(f"remote graph is not exact: {reconciliation}")
+            errors.extend(
+                verify_final_graph(draft, recorded_remote_state, data.get("graph_actions"))
+            )
+
+
+def add_plan_errors(
+    data: dict[str, Any],
+    errors: list[str],
+    skip_remote: bool,
+    visual_phase: str = "plan",
+) -> None:
     research_body = add_research_errors(data, errors, skip_remote)
-    validate_plan_identity_and_evidence(data, errors)
+    disposition = data.get("visual_artifact_disposition")
+    visual_mode = (
+        disposition.get("evidence_mode")
+        if isinstance(disposition, dict)
+        and disposition.get("evidence_mode")
+        in {"none", "runtime_capture", "generative_mockup"}
+        else "generative_mockup"
+    )
+    validate_plan_identity_and_evidence(data, errors, visual_mode)
     contestants = data.get("contestants")
     judges = data.get("judges")
     contestant_ids = agent_ids(contestants)
@@ -710,7 +1288,10 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
                 errors.append(f"contestants[{index}].candidate_id is required")
             else:
                 candidate_ids.append(candidate_id.strip())
-            for field in ("concept", "visual_brief"):
+            required_fields = ["concept"]
+            if visual_mode == "generative_mockup":
+                required_fields.append("visual_brief")
+            for field in required_fields:
                 if not nonempty(contestant.get(field)):
                     errors.append(f"contestants[{index}].{field} is required")
             if nonempty(contestant.get("concept")):
@@ -721,7 +1302,12 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
         errors.append("contestant concepts must be distinct")
     candidate_set = set(candidate_ids)
 
-    validate_image_receipts(data.get("contestant_images"), candidate_set, errors, "contestant_images")
+    if visual_mode == "generative_mockup":
+        validate_image_receipts(
+            data.get("contestant_images"), candidate_set, errors, "contestant_images"
+        )
+    elif data.get("contestant_images") != []:
+        errors.append(f"visual mode {visual_mode} requires empty contestant_images")
 
     if len(judge_ids) != 2 or len(set(judge_ids)) != 2:
         errors.append("exactly two unique completed judge agents are required")
@@ -747,7 +1333,10 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
         errors.append("judge_rubric must contain at least five distinct dimensions")
 
     semantic_reviews = data.get("semantic_visual_reviews")
-    if not isinstance(semantic_reviews, list) or len(semantic_reviews) != 3:
+    if visual_mode != "generative_mockup":
+        if semantic_reviews != []:
+            errors.append(f"visual mode {visual_mode} requires empty semantic_visual_reviews")
+    elif not isinstance(semantic_reviews, list) or len(semantic_reviews) != 3:
         errors.append("exactly three semantic_visual_reviews are required")
     else:
         reviewed: set[str] = set()
@@ -786,16 +1375,27 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
         errors.append("every rejected differentiator needs idea and rationale")
 
     final_iterations = data.get("final_image_iterations")
-    validate_image_receipts(final_iterations, None, errors, "final_image_iterations")
-    if not isinstance(final_iterations, list) or not final_iterations:
-        errors.append("at least one final ImageGen iteration is required")
-    elif isinstance(final_iterations[-1], dict):
-        final_confidence = final_iterations[-1].get("confidence")
-        if not finite_number(final_confidence, 7, 10):
-            errors.append("final confidence must be at least 7")
-        for index, iteration in enumerate(final_iterations[:-1]):
-            if not isinstance(iteration, dict) or not finite_number(iteration.get("confidence"), 1, 6.999):
-                errors.append(f"final_image_iterations[{index}] must record sub-7 confidence")
+    if visual_mode == "generative_mockup":
+        validate_image_receipts(final_iterations, None, errors, "final_image_iterations")
+        if not isinstance(final_iterations, list) or not final_iterations:
+            errors.append("at least one final ImageGen iteration is required")
+        elif isinstance(final_iterations[-1], dict):
+            final_confidence = final_iterations[-1].get("confidence")
+            if not finite_number(final_confidence, 7, 10):
+                errors.append("final confidence must be at least 7")
+            for index, iteration in enumerate(final_iterations[:-1]):
+                if not isinstance(iteration, dict) or not finite_number(
+                    iteration.get("confidence"), 1, 6.999
+                ):
+                    errors.append(
+                        f"final_image_iterations[{index}] must record sub-7 confidence"
+                    )
+    elif final_iterations != []:
+        errors.append(f"visual mode {visual_mode} requires empty final_image_iterations")
+    if visual_mode != "generative_mockup" and data.get("final_image_url") not in {"", None}:
+        errors.append(f"visual mode {visual_mode} requires an empty final_image_url")
+    if not finite_number(data.get("synthesis_confidence"), 7, 10):
+        errors.append("synthesis_confidence must be between 7 and 10")
 
     contestant_paths = {
         str(Path(item["path"]).expanduser().resolve())
@@ -817,7 +1417,9 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
         for item in final_iterations or []
         if isinstance(item, dict) and nonempty(item.get("imagegen_call_id"))
     }
-    if contestant_paths & final_paths or contestant_calls & final_calls:
+    if visual_mode == "generative_mockup" and (
+        contestant_paths & final_paths or contestant_calls & final_calls
+    ):
         errors.append("final ImageGen receipts must be distinct from every contestant receipt")
 
     if data.get("feature_to_spec_redirected") is not True:
@@ -841,6 +1443,33 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
         skip_remote,
     )
     if not skip_remote and research_body and implementation_body:
+        validate_plan_protocol_evidence(
+            data, implementation_body, errors, skip_remote=skip_remote
+        )
+        authoritative_paths = None
+        if visual_phase == "review":
+            authoritative_paths = review_changed_paths(data, errors)
+        validated_mode, _inventory, disposition_errors = validate_disposition(
+            disposition,
+            implementation_body,
+            phase=visual_phase,
+            authoritative_paths=authoritative_paths,
+            require_embedded_inventory=data.get("plan_protocol_version")
+            == PLAN_PROTOCOL_V2,
+            authoritative_user_directions=data.get("visual_user_directions"),
+        )
+        errors.extend(disposition_errors)
+        if validated_mode is not None and validated_mode != visual_mode:
+            errors.append("visual mode changed during Plan validation")
+        if visual_mode == "runtime_capture":
+            runtime_evidence = data.get("runtime_visual_evidence")
+            if not isinstance(runtime_evidence, list) or not any(
+                isinstance(item, dict)
+                and nonempty(item.get("kind"))
+                and nonempty(item.get("evidence"))
+                for item in runtime_evidence
+            ):
+                errors.append("runtime_capture requires current runtime visual evidence")
         approved_hosts = data.get("approved_artifact_hosts")
         if not isinstance(approved_hosts, list) or not all(
             nonempty(host) and re.fullmatch(r"[a-zA-Z0-9.-]+", host)
@@ -852,26 +1481,28 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
             errors.append("research issue does not link the implementation issue")
         if not reference_present(implementation_body, data["research_issue_url"]):
             errors.append("implementation issue does not link the research issue")
-        final_sha = (
-            final_iterations[-1].get("sha256")
-            if isinstance(final_iterations, list)
-            and final_iterations
-            and isinstance(final_iterations[-1], dict)
-            else None
-        )
-        final_image_url = data.get("final_image_url")
-        if not durable_image_url(final_image_url, approved_hosts):
-            errors.append("final_image_url must use an approved durable HTTPS artifact host")
-        elif final_image_url not in implementation_body:
-            errors.append("implementation issue does not durably link the final ImageGen mockup")
-        else:
-            remote_sha, remote_error = remote_image_sha256(
-                final_image_url, data.get("implementation_issue_url")
+        final_sha = None
+        if visual_mode == "generative_mockup":
+            final_sha = (
+                final_iterations[-1].get("sha256")
+                if isinstance(final_iterations, list)
+                and final_iterations
+                and isinstance(final_iterations[-1], dict)
+                else None
             )
-            if remote_error:
-                errors.append(f"final ImageGen URL fetch failed: {remote_error}")
-            elif remote_sha != final_sha:
-                errors.append("hosted final ImageGen bytes do not match the manifest SHA-256")
+            final_image_url = data.get("final_image_url")
+            if not durable_image_url(final_image_url, approved_hosts):
+                errors.append("final_image_url must use an approved durable HTTPS artifact host")
+            elif final_image_url not in implementation_body:
+                errors.append("implementation issue does not durably link the final ImageGen mockup")
+            else:
+                remote_sha, remote_error = remote_image_sha256(
+                    final_image_url, data.get("implementation_issue_url")
+                )
+                if remote_error:
+                    errors.append(f"final ImageGen URL fetch failed: {remote_error}")
+                elif remote_sha != final_sha:
+                    errors.append("hosted final ImageGen bytes do not match the manifest SHA-256")
         acceptance_section = markdown_section(implementation_body, "acceptance criteria")
         tasks_section = markdown_section(implementation_body, "tasks")
         matrix_section = markdown_section(implementation_body, "mockup accounting matrix")
@@ -896,16 +1527,53 @@ def add_plan_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) 
             errors.append("published mockup-accounting row count does not match the manifest")
         if "```mermaid" not in design_section.lower():
             errors.append("published implementation issue must include a Mermaid design diagram")
-        if not nonempty(final_sha) or final_sha not in implementation_body:
+        if visual_mode == "generative_mockup" and (
+            not nonempty(final_sha) or final_sha not in implementation_body
+        ):
             errors.append("implementation issue does not bind the final image SHA-256")
 
 
 def add_orientation_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) -> None:
-    add_plan_errors(data, errors, skip_remote)
+    add_plan_errors(data, errors, skip_remote, visual_phase="implement-orientation")
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
     if data.get("no_mutation_before_approval") is not True:
         errors.append("no_mutation_before_approval must be true")
+
+
+def review_changed_paths(
+    data: dict[str, Any], errors: list[str]
+) -> list[str] | None:
+    root = Path(data.get("repo_root", ""))
+    starting_commit = data.get("starting_commit")
+    if not root.is_dir() or not (root / ".git").exists():
+        errors.append("Review requires an existing repository worktree for actual-diff binding")
+        return None
+    if not nonempty(starting_commit) or not re.fullmatch(
+        r"[0-9a-fA-F]{40}", starting_commit
+    ):
+        errors.append("Review requires a full starting_commit for actual-diff binding")
+        return None
+    changed: set[str] = set()
+    for command in (
+        ["git", "diff", "--name-only", f"{starting_commit}..HEAD"],
+        ["git", "diff", "--name-only"],
+        ["git", "diff", "--cached", "--name-only"],
+    ):
+        result = subprocess.run(
+            command,
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            errors.append("failed to derive authoritative changed paths for visual review")
+            return None
+        changed.update(
+            line.strip() for line in result.stdout.splitlines() if line.strip()
+        )
+    return sorted(changed)
 
 
 def validate_reviewer(entry: Any, label: str, errors: list[str]) -> str | None:
@@ -915,8 +1583,13 @@ def validate_reviewer(entry: Any, label: str, errors: list[str]) -> str | None:
     return entry["agent_id"].strip()
 
 
-def add_implement_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) -> None:
-    add_plan_errors(data, errors, skip_remote)
+def add_implement_errors(
+    data: dict[str, Any],
+    errors: list[str],
+    skip_remote: bool,
+    visual_phase: str = "implement",
+) -> None:
+    add_plan_errors(data, errors, skip_remote, visual_phase=visual_phase)
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
     mutation_at = timestamp(data.get("first_mutation_at"))
@@ -941,7 +1614,17 @@ def add_implement_errors(data: dict[str, Any], errors: list[str], skip_remote: b
                 errors.append(f"implementation_workers[{index}].handoff is required")
 
     test_id = validate_reviewer(data.get("test_reviewer"), "test_reviewer", errors)
-    acceptance_id = validate_reviewer(data.get("acceptance_reviewer"), "acceptance_reviewer", errors)
+    disposition = data.get("visual_artifact_disposition")
+    visual_mode = (
+        disposition.get("evidence_mode")
+        if isinstance(disposition, dict)
+        else "generative_mockup"
+    )
+    acceptance_id = None
+    if visual_mode in {"runtime_capture", "generative_mockup"}:
+        acceptance_id = validate_reviewer(
+            data.get("acceptance_reviewer"), "acceptance_reviewer", errors
+        )
     all_prior_ids = set(agent_ids(data.get("contestants"))) | set(agent_ids(data.get("judges")))
     all_ids = worker_ids + [value for value in (test_id, acceptance_id) if value]
     if len(all_ids) != len(set(all_ids)):
@@ -949,7 +1632,9 @@ def add_implement_errors(data: dict[str, Any], errors: list[str], skip_remote: b
     if set(all_ids) & all_prior_ids:
         errors.append("implementation workers/reviewers must be fresh from tournament agents")
 
-    if data.get("unexplained_mockup_gaps") != 0:
+    if visual_mode in {"runtime_capture", "generative_mockup"} and data.get(
+        "unexplained_mockup_gaps"
+    ) != 0:
         errors.append("unexplained_mockup_gaps must equal 0")
     gates = data.get("quality_gates")
     if not isinstance(gates, list) or not gates:
@@ -998,6 +1683,40 @@ def add_handoff_error(data: dict[str, Any], phase: str, errors: list[str]) -> No
     }.get(phase)
     if expected_command and expected_command not in invocation:
         errors.append(f"next_invocation must contain {expected_command}")
+
+
+def transition_judge_excluded_ids(
+    data: dict[str, Any], current_judgment: dict[str, Any]
+) -> set[str]:
+    def every_declared_id(entries: Any) -> set[str]:
+        return {
+            entry["agent_id"].strip()
+            for entry in entries or []
+            if isinstance(entry, dict) and nonempty(entry.get("agent_id"))
+        }
+
+    excluded = every_declared_id(data.get("contestants"))
+    excluded |= every_declared_id(data.get("judges"))
+    excluded |= every_declared_id(data.get("implementation_workers"))
+    excluded |= every_declared_id(data.get("trace_audits"))
+    excluded |= every_declared_id(data.get("plan_audits"))
+    for label in ("test_reviewer", "acceptance_reviewer"):
+        entry = data.get(label)
+        if isinstance(entry, dict) and nonempty(entry.get("agent_id")):
+            excluded.add(entry["agent_id"].strip())
+    excluded |= {
+        entry["agent_id"].strip()
+        for entry in data.get("phase_retrospectives", [])
+        if isinstance(entry, dict) and nonempty(entry.get("agent_id"))
+    }
+    excluded |= {
+        entry["agent_id"].strip()
+        for entry in data.get("phase_transition_judgments", [])
+        if isinstance(entry, dict)
+        and entry is not current_judgment
+        and nonempty(entry.get("agent_id"))
+    }
+    return excluded
 
 
 def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: list[str]) -> None:
@@ -1066,7 +1785,15 @@ def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: li
     if not isinstance(binding, dict) or judgment.get("phase_receipt_sha256") != binding.get("receipt_sha256"):
         errors.append(f"{predecessor} transition judgment must bind the predecessor VALID receipt SHA-256")
     else:
-        evidence, session_error = agent_session_evidence(judgment.get("agent_id", ""))
+        collaboration = judgment.get("receipt_kind") == "collaboration_delegated"
+        if collaboration:
+            evidence, session_error = collaboration_delegated_audit_evidence(
+                data, judgment
+            )
+        else:
+            evidence, session_error = agent_session_evidence(
+                judgment.get("agent_id", "")
+            )
         if session_error:
             errors.append(f"{predecessor} transition judge session verification failed: {session_error}")
         else:
@@ -1078,20 +1805,30 @@ def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: li
                 errors.append(f"{predecessor} transition judge must be a depth-one Codex subagent")
             if subagent.get("parent_thread_id") != data.get("parent_thread_id"):
                 errors.append(f"{predecessor} transition judge does not belong to the current parent thread")
-            if expected_marker not in evidence["prompt"].lower():
+            if collaboration and not persisted_delegation_role_matches(
+                evidence.get("delegation_arguments"), expected_marker
+            ):
+                errors.append(
+                    f"{predecessor} transition judge persisted delegation lacks "
+                    "the required role marker"
+                )
+            elif not collaboration and expected_marker not in evidence["prompt"].lower():
                 errors.append(f"{predecessor} transition judge prompt lacks the required role marker")
             if judgment.get("result_sha256") != hashlib.sha256(evidence["final_message"].encode()).hexdigest():
                 errors.append(f"{predecessor} transition judge result SHA-256 does not match its session")
             if timestamp(judgment.get("completed_at")) != timestamp(evidence.get("completed_at")):
                 errors.append(f"{predecessor} transition judge completed_at does not match its session")
-    excluded_ids = set(agent_ids(data.get("trace_audits")))
-    excluded_ids |= {
-        entry.get("agent_id")
-        for entry in data.get("phase_retrospectives", [])
-        if isinstance(entry, dict) and nonempty(entry.get("agent_id"))
-    }
-    if not nonempty(judgment.get("agent_id")) or judgment.get("agent_id") in excluded_ids:
-        errors.append(f"{predecessor} transition judge must be independent of auditors")
+    excluded_ids = transition_judge_excluded_ids(data, judgment)
+    judgment_agent_id = (
+        judgment["agent_id"].strip()
+        if nonempty(judgment.get("agent_id"))
+        else ""
+    )
+    if not judgment_agent_id or judgment_agent_id in excluded_ids:
+        errors.append(
+            f"{predecessor} transition judge must be fresh and independent of "
+            "all other workflow roles"
+        )
     unresolved_hard_stops = data.get("unresolved_hard_stops", [])
     if not isinstance(unresolved_hard_stops, list):
         errors.append("unresolved_hard_stops must be an array")
@@ -1222,7 +1959,8 @@ def validate(data: dict[str, Any], phase: str, skip_remote: bool) -> list[str]:
     elif phase == "implement":
         add_implement_errors(data, errors, skip_remote)
     elif phase == "review":
-        add_implement_errors(data, errors, skip_remote)
+        review_changed_paths(data, errors)
+        add_implement_errors(data, errors, skip_remote, visual_phase="review")
         if data.get("review_dispositions_recorded") is not True:
             errors.append("review_dispositions_recorded must be true")
         if data.get("remote_checks_reported") is not True:

@@ -9,8 +9,11 @@ tests, independent review, validator receipts, and explicit stop gates make outc
 
 - Evidence-backed research before architecture selection.
 - A three-concept design tournament with two independent judges.
-- ImageGen-backed normative visuals, grounded in the current product shell.
+- A deterministic visual-applicability gate: no images for proven nonvisual work, runtime evidence
+  for bounded existing-UI changes, and ImageGen only for new or substantially redesigned visuals.
 - GitHub Issues as durable research and plan artifacts.
+- Adversarial Plan audits with stable findings and authenticated remediation lineage.
+- Deterministic task parsing and an authorization-bound native GitHub issue graph for complex Plans.
 - Structured Plan and Implement exit contracts.
 - External-action verification: a staged upload or optimistic UI is never treated as complete.
 - Independent execution audits before phase transitions.
@@ -57,12 +60,18 @@ references/              Phase contracts, role contracts, publication, retrospec
 scripts/init_run.py      Creates a durable run manifest
 scripts/validate_run.py  Validates phase transitions and writes receipts
 scripts/preflight_plan.py Validates a draft plan before publication
+scripts/plan_protocol.py Plan protocol, task, audit, event, graph, and recovery invariants
+scripts/plan_lint.py       Deterministic Plan-structure lint
+scripts/migrate_plan_protocol.py Explicit legacy-to-v2 manifest migration
+scripts/visual_applicability.py Deterministic visual-evidence mode selection
 scripts/record_retrospective.py Records fixed-rubric phase retrospectives
 scripts/verify_skill_sync.py Verifies an installed skill matches this release
 scripts/record_transition_outcome.py Records outcomes for confidence calibration
 scripts/transition_calibration.py Reports whether confidence predicts outcomes
 scripts/run_status.py       Emits a machine-readable run dashboard
 bundled-skills/feature-to-spec/ Portable Plan-phase EARS specification skill
+bundled-skills/plan-auditor/ Portable adversarial Plan review contract
+bundled-skills/plan-to-graph/ Protected GitHub issue-graph transaction contract
 tests/                   Standard-library harness tests
 ```
 
@@ -96,8 +105,25 @@ python3 scripts/run_status.py /tmp/evidence-gated-delivery-run.json
 - A local Git worktree for `init_run.py`.
 - An authenticated `gh` CLI when a phase needs to create or read GitHub artifacts, or resolve a
   private GitHub attachment.
-- An agent runtime with subagents and ImageGen for the full Plan tournament. The validator can run
-  anywhere with Python 3, but a Plan cannot pass without the required evidence from those tools.
+- An agent runtime with subagents. ImageGen is required only when the phase-bound disposition is
+  `generative_mockup`; runtime-capture and nonvisual Plans do not generate images.
+
+## Hi-fi planning gates
+
+New runs use immutable `plan-protocol/v2`. A Plan is linted, independently audited, bound to the
+exact remotely read GitHub issue body, and parsed into stable `T-NNN` tasks. `graph-policy/v1`
+selects `NO_GRAPH` only for at most three tasks, no dependency edges, and one owner lane; every
+other Plan requires an exact, separately authorized native GitHub sub-issue graph.
+
+Graph publication is never implied by ordinary Plan or implementation approval. The frozen draft,
+authenticated account, repository, parent, CLI capabilities, child bodies, and dependency edges
+must all match the explicit authorization. Recovery resumes only an exact authorized subset and
+never edits or deletes conflicting remote state.
+
+The bundled planning skills are portable reimplementations informed by
+`lousy-agents/skills` at the pinned provenance revision. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
+[references/source-provenance.json](references/source-provenance.json).
 
 ## Initialize a run
 

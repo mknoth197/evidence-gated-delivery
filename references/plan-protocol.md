@@ -1,0 +1,151 @@
+# Plan Protocol v2
+
+`plan-protocol/v2` is the machine-checkable Plan contract for newly initialized
+Evidence-Gated Delivery runs. GitHub implementation issues remain the only normative Plan
+artifacts; manifests and checkpoint receipts are execution evidence.
+
+## Versioning
+
+- New runs record `plan_protocol_version: plan-protocol/v2`.
+- A legacy manifest must explicitly retain `plan-protocol/v1`; a missing field fails closed.
+- Supported values are `plan-protocol/v1` and `plan-protocol/v2`; every other value fails closed.
+- A recorded version is immutable. Migration is an explicit command that appends a
+  `protocol_migrated` event preserving the previous event-chain head.
+
+## Canonical issue body
+
+Canonicalization converts CRLF and bare CR line endings to LF. It does not trim whitespace,
+remove comments, reorder sections, or ignore URLs, criteria, tasks, or relationships. The
+canonical UTF-8 bytes are hashed with SHA-256.
+
+## Stable task grammar
+
+Every direct Markdown task under `## Tasks` has this shape:
+
+```text
+- [ ] **T-NNN — Title.** Objective: ... Context: ... Affected modules: ...
+  Requirements: ... Verification: ... Complete when: ... Owner lane: lane.
+  `depends_on: [T-NNN, ...]`.
+```
+
+Required fields are `Objective`, `Context`, `Affected modules`, `Requirements`, `Verification`,
+`Complete when`, `Owner lane`, and `depends_on`. IDs are unique and sequential from `T-001`.
+Dependencies name existing task IDs, never self-reference, and form an acyclic graph. Dependency
+edges come only from `depends_on`; prose is not interpreted.
+
+Each parsed task receipt contains:
+
+```json
+{
+  "task_id": "T-001",
+  "title": "Freeze contracts and schemas",
+  "body": "complete task Markdown",
+  "body_sha256": "sha256",
+  "objective": "...",
+  "context": "...",
+  "affected_modules": ["..."],
+  "requirements": "...",
+  "verification": "...",
+  "complete_when": "...",
+  "owner_lane": "core",
+  "depends_on": []
+}
+```
+
+## Graph policy
+
+`graph-policy/v1` is deterministic:
+
+- `NO_GRAPH` when task count is at most three, dependency edge count is zero, and owner-lane count
+  is exactly one.
+- `GRAPH_REQUIRED` otherwise.
+
+The receipt records the version, disposition, task count, edge count, owner lanes, task-set hash,
+and evaluation timestamp. Agents do not select the result.
+
+## Plan audit
+
+`plan_audits` is an append-only array of authenticated receipts. Every receipt records:
+
+- unique UUID `agent_id`, `agent_path`, and role marker
+  `Independent Plan spec auditor`;
+- `kind`: `preliminary`, `remediation_recheck`, or `final_remote`;
+- exact `reviewed_body_sha256`, immutable result hash, start/completion timestamps, and evidence
+  IDs;
+- findings with stable ID, severity (`Blocker`, `High`, `Medium`, `Low`), confidence, evidence,
+  bounded question when needed, targeted patch, verification implication, downstream instruction,
+  and disposition;
+- predecessor audit and finding IDs for a remediation recheck.
+
+Blocker and High findings require a fresh independent recheck with `verified_fixed` disposition.
+Medium findings require `verified_fixed`, or `accepted`/`deferred` with nonempty owner and
+rationale. Final validation requires a fresh `final_remote` receipt for the exact canonical remote
+issue-body hash. Auditor IDs cannot overlap patch authors, contestants, tournament judges, phase
+auditors, transition judges, implementation workers, or predecessor Plan auditors.
+
+## Hash-chained events
+
+`plan_events` is append-only. Each event contains sequential `sequence`, stable `event_id`, event
+`type`, ISO-8601 `recorded_at`, privacy-safe `payload`, `previous_event_sha256`, and
+`event_sha256`. The event hash is SHA-256 of canonical compact JSON for every field except
+`event_sha256`. The first event uses 64 zeroes as its previous hash.
+
+Allowed event types are:
+
+- `protocol_initialized`
+- `protocol_migrated`
+- `candidate_linted`
+- `audit_completed`
+- `finding_dispositioned`
+- `issue_read_back`
+- `graph_policy_evaluated`
+- `graph_draft_frozen`
+- `graph_authorized`
+- `graph_action_recorded`
+- `graph_reconciled`
+- `checkpoint_issued`
+- `phase_validated`
+
+Checkpoint status is `CHECKPOINT_VALID`; it never substitutes for the phase validator's `VALID`
+receipt.
+
+## Protected graph transaction
+
+A frozen graph draft records the parent issue URL, repository, exact child titles and complete
+bodies, stable markers, child-body hashes, and ordered dependency edges. Its SHA-256 covers the
+complete canonical object.
+
+Authorization is valid only when it binds:
+
+- authenticated GitHub login and immutable account ID;
+- exact repository and parent issue;
+- a current capability receipt proving native parent, blocking, and read-back support;
+- graph draft SHA-256, every child-body SHA-256, and every edge;
+- explicit authorization evidence and timestamp.
+
+Any identity, repository, parent, capability, or draft drift invalidates authorization before a
+write. Graph action records use `attempted`, `verified`, or `blocked`; a successful command is not
+`verified` until remote read-back agrees.
+
+## Reconciliation
+
+Remote graph state has exactly three recovery classes:
+
+- `EXACT_MATCH`: reuse the verified item.
+- `AUTHORIZED_MISSING`: resume only missing items when all observed state is an exact subset of the
+  same authorized draft.
+- `CONFLICT`: stop in `BLOCKED`; do not edit, delete, close, or duplicate unknown state. Freeze a
+  new draft and obtain explicit reauthorization.
+
+Final graph proof verifies stable task markers, child body hashes, parent membership, ordered
+dependency edges, and action ordering from authenticated remote read-back.
+
+## Privacy and provenance
+
+Public artifacts and receipts contain only public issue metadata, stable task identifiers,
+timestamps, hashes, and bounded findings. Never include credentials, tokens, private prompts, PII,
+or unsupported performance or quality claims.
+
+The bundled `plan-auditor` and `plan-to-graph` skills are portable reimplementations influenced by
+the BSD-2-Clause `lousy-agents/skills` project. Their provenance record and required license notice
+ship with the package.

@@ -15,6 +15,13 @@ from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from visual_applicability import validate_disposition
+from plan_protocol import PLAN_PROTOCOL_V2, lint_plan
+
 HEADINGS = (
     "Problem Statement",
     "Personas",
@@ -119,7 +126,22 @@ def remote_image_sha256(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("body", type=Path)
-    parser.add_argument("--final-image", required=True, type=Path)
+    parser.add_argument(
+        "--plan-protocol-version",
+        default=PLAN_PROTOCOL_V2,
+        choices=("plan-protocol/v1", PLAN_PROTOCOL_V2),
+    )
+    parser.add_argument("--final-image", type=Path)
+    parser.add_argument(
+        "--visual-disposition",
+        type=Path,
+        help="JSON visual_artifact_disposition receipt bound to the Plan body",
+    )
+    parser.add_argument(
+        "--user-direction",
+        action="append",
+        help="Persisted effective user direction; repeat in source order",
+    )
     parser.add_argument(
         "--allow-host",
         action="append",
@@ -135,10 +157,45 @@ def main() -> int:
     errors: list[str] = []
     try:
         body = args.body.read_text()
-        image_bytes = args.final_image.read_bytes()
     except OSError as exc:
         print(json.dumps({"status": "INVALID", "errors": [str(exc)]}, indent=2))
         return 2
+
+    disposition: dict[str, object]
+    if args.visual_disposition:
+        try:
+            disposition = json.loads(args.visual_disposition.read_text())
+            if isinstance(disposition.get("visual_artifact_disposition"), dict):
+                disposition = disposition["visual_artifact_disposition"]
+        except (OSError, json.JSONDecodeError) as exc:
+            print(json.dumps({"status": "INVALID", "errors": [str(exc)]}, indent=2))
+            return 2
+    elif args.final_image:
+        disposition = {
+            "policy_version": "legacy",
+            "decision": "VISUAL_REQUIRED",
+            "evidence_mode": "generative_mockup",
+        }
+        errors.append("visual disposition receipt is required")
+    else:
+        disposition = {}
+        errors.append("visual disposition receipt is required")
+    visual_mode, _inventory, disposition_errors = validate_disposition(
+        disposition,
+        body,
+        phase="plan",
+        require_embedded_inventory=args.plan_protocol_version == PLAN_PROTOCOL_V2,
+        authoritative_user_directions=args.user_direction,
+    )
+    errors.extend(disposition_errors)
+    lint_receipt = None
+    if args.plan_protocol_version == PLAN_PROTOCOL_V2:
+        lint_receipt = lint_plan(body)
+        if lint_receipt["status"] != "PASS":
+            errors.extend(
+                f"{finding['finding_id']}: {finding['evidence']}"
+                for finding in lint_receipt["findings"]
+            )
 
     for heading in HEADINGS:
         content = section(body, heading)
@@ -174,30 +231,50 @@ def main() -> int:
     if not re.search(r"https://github\.com/[^/]+/[^/]+/issues/\d+", cross_reference):
         errors.append("Cross-Reference must contain the exact Research issue URL")
 
-    image_sha = hashlib.sha256(image_bytes).hexdigest()
-    if image_sha not in body:
-        errors.append("issue body does not contain the final image SHA-256")
-    urls = re.findall(r"https?://[^\s)>]+", body)
-    durable_urls = [
-        url.rstrip(".,") for url in urls if approved_url(url.rstrip(".,"), args.allow_host)
-    ]
-    if not durable_urls:
-        errors.append("issue body lacks an approved durable final mockup URL")
-    elif len(durable_urls) != 1:
-        errors.append("issue body must identify exactly one durable final mockup URL")
-    else:
-        remote_sha, remote_error = remote_image_sha256(
-            durable_urls[0], args.github_issue_url
-        )
-        if remote_error:
-            errors.append(remote_error)
-        elif remote_sha != image_sha:
-            errors.append("hosted final mockup bytes do not match the local image SHA-256")
+    image_sha: str | None = None
+    durable_urls: list[str] = []
+    if visual_mode == "generative_mockup":
+        if args.final_image is None:
+            errors.append("generative_mockup requires --final-image")
+        else:
+            try:
+                image_bytes = args.final_image.read_bytes()
+            except OSError as exc:
+                errors.append(str(exc))
+            else:
+                image_sha = hashlib.sha256(image_bytes).hexdigest()
+                if image_sha not in body:
+                    errors.append("issue body does not contain the final image SHA-256")
+                urls = re.findall(r"https?://[^\s)>]+", body)
+                durable_urls = [
+                    url.rstrip(".,")
+                    for url in urls
+                    if approved_url(url.rstrip(".,"), args.allow_host)
+                ]
+                if not durable_urls:
+                    errors.append("issue body lacks an approved durable final mockup URL")
+                elif len(durable_urls) != 1:
+                    errors.append("issue body must identify exactly one durable final mockup URL")
+                else:
+                    remote_sha, remote_error = remote_image_sha256(
+                        durable_urls[0], args.github_issue_url
+                    )
+                    if remote_error:
+                        errors.append(remote_error)
+                    elif remote_sha != image_sha:
+                        errors.append(
+                            "hosted final mockup bytes do not match the local image SHA-256"
+                        )
+    elif args.final_image is not None:
+        errors.append(f"visual mode {visual_mode} must not receive --final-image")
 
     result = {
         "status": "VALID" if not errors else "INVALID",
         "body": str(args.body),
-        "final_image": str(args.final_image),
+        "visual_evidence_mode": visual_mode,
+        "plan_protocol_version": args.plan_protocol_version,
+        "plan_lint": lint_receipt,
+        "final_image": str(args.final_image) if args.final_image else None,
         "final_image_sha256": image_sha,
         "acceptance_criteria_count": len(ears),
         "implementation_task_count": len(checkboxes),

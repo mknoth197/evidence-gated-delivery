@@ -9,7 +9,15 @@ from pathlib import Path
 
 
 EXCLUDED = {"__pycache__", ".git"}
-INCLUDED_TOP_LEVEL = {"SKILL.md", "agents", "references", "scripts", "bundled-skills"}
+INCLUDED_TOP_LEVEL = {
+    "SKILL.md",
+    "THIRD_PARTY_NOTICES.md",
+    "skills.sh.json",
+    "agents",
+    "references",
+    "scripts",
+    "bundled-skills",
+}
 
 
 def files(root: Path) -> dict[str, str]:

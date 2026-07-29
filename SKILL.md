@@ -27,6 +27,8 @@ Read [phase-contracts.md](references/phase-contracts.md) and
 [run-manifest.md](references/run-manifest.md) when beginning a run. Read only the active phase plus
 Shared Rules from the phase contracts. Read [role-contracts.md](references/role-contracts.md) before
 spawning tournament, implementation, or review subagents.
+Read [plan-protocol.md](references/plan-protocol.md) before Plan, Implement Orientation, or graph
+operations.
 Read [artifact-publication.md](references/artifact-publication.md) before Plan publication.
 Read [continuous-improvement.md](references/continuous-improvement.md) before beginning any run.
 
@@ -120,8 +122,9 @@ Separate observed facts, supported inferences, and unresolved questions.
 ### Artifacts
 
 - Research ends in a linked GitHub research issue.
-- Plan ends in a linked GitHub implementation issue with testable acceptance criteria and the
-  final normative mockup attached or durably linked.
+- Plan ends in a linked GitHub implementation issue with testable acceptance criteria and a
+  validator-bound visual disposition. A normative mockup is attached or durably linked only when
+  the disposition selects `generative_mockup`.
 - Implement ends in a focused branch and pull request.
 - Review ends in verified dispositions, fixes where valid, and current check status.
 - Link each artifact backward and forward.
@@ -254,16 +257,31 @@ $evidence-gated-delivery plan <research-artifact-url>
 Goal: choose and freeze what should be built.
 
 1. Revalidate the research artifact against current product, source, data, and rollout mechanisms.
-   Capture the current authenticated product surface when the plan contains a user-facing mockup.
+   Before screenshots, visual briefs, or ImageGen, evaluate `visual-applicability/v1` from the
+   complete scoped deliverable, effective user direction, acceptance criteria, tasks, affected
+   modules, intended paths, and repository evidence. Select:
+   - `none` for complete, positively proven nonvisual scope;
+   - `runtime_capture` for existing-UI work fully verifiable through current runtime, DOM,
+     accessibility, or visual-regression evidence; or
+   - `generative_mockup` for new or substantially redesigned visual concepts, inherently visual
+     deliverables, or explicit ImageGen exploration.
+   An unrelated frontend does not make images applicable. Documentation expressed adequately
+   through prose, tables, or Mermaid is nonvisual unless appearance is itself the deliverable.
+   Incomplete or materially ambiguous scope blocks before visual work. Bind the canonical scope
+   inventory and remote issue-body hashes and recompute at Implement Orientation and Review.
+   Persist the exact effective user-direction text in `visual_user_directions`; the receipt must
+   match its hashes, directives, authority, scope, source order, and turn rather than synthesizing
+   a neutral direction.
+   Capture the current authenticated product surface only when the selected mode requires it.
    An assumed shell may illustrate a research concept, but it is not eligible to be normative or to
    enter the mockup-accounting matrix.
 2. Freeze one shared evidence packet and non-negotiable constraints before ideation.
 3. Act as the main orchestrator. Delegate exactly three meaningfully different approaches to three
    independent contestant subagents using the same evidence packet and rubric.
-4. Require every contestant to provide both:
-   - a reasoned concept;
-   - an ImageGen-ready visual brief grounded in current product screenshots and design constraints.
-5. Use ImageGen to create one visual for every contestant. If a contestant cannot invoke ImageGen,
+4. Require every contestant to provide a reasoned concept. Only in `generative_mockup`, require an
+   ImageGen-ready visual brief grounded in current product screenshots and design constraints.
+5. Only in `generative_mockup`, use ImageGen to create one visual for every contestant. If a
+   contestant cannot invoke ImageGen,
    the orchestrator must generate its visual from that contestant's brief without changing the
    concept.
    Before judging, audit every visible metric, label, freshness claim, causal statement, and
@@ -271,52 +289,66 @@ Goal: choose and freeze what should be built.
    packet and require corrected ImageGen output. Ground every visual brief and final mockup in a
    current captured product shell recorded in visual_grounding; do not infer the shell from memory
    or use a generic dashboard.
+   In `runtime_capture` and `none`, retain empty contestant-image and semantic-visual-review arrays.
 6. Spawn exactly two fresh judge subagents that did not compete. Give each judge all three complete
-   concept-plus-image submissions and the same scoring rubric. Judges score independently and do
+   concept submissions plus the evidence required by the selected visual mode and the same scoring
+   rubric. Judges score independently and do
    not see each other's verdict before submitting.
    Record both agent IDs, complete verdicts, scorecards, and confidence in the run manifest.
 7. Aggregate the two verdicts and select the winner. Cherry-pick differentiating ideas from losing
    submissions into the winner whenever feasible. Reject one only with a concrete incompatibility,
    semantic risk, or documented tradeoff.
-8. Use ImageGen again to create a dedicated final-winner mockup after synthesis.
-9. Record the orchestrator's confidence from 1-10. If confidence is below `7/10`, revise the prompt,
-   run ImageGen again, and reassess. Repeat until confidence is at least `7/10`; do not advance to
-   issue creation while confidence remains below 7.
-10. Treat the final mockup as normative. Every visible element, interaction, state, label, data
+8. Record `synthesis_confidence` from 1-10 in every mode. In `generative_mockup`, use ImageGen
+   again to create a dedicated final-winner mockup. If visual confidence is below `7/10`, revise,
+   regenerate, and reassess.
+9. In `generative_mockup`, treat the final mockup as normative. Every visible element, interaction,
+    state, label, data
     mapping, responsive rule, and accessibility behavior must be represented in the plan. Require
     no differences or gaps unless a deviation is explicitly documented and approved.
-11. Read the bundled [`feature-to-spec` skill](bundled-skills/feature-to-spec/SKILL.md) for EARS
+10. Read the bundled [`feature-to-spec` skill](bundled-skills/feature-to-spec/SKILL.md) for EARS
     patterns, personas, value assessment, diagrams, ambiguity handling, task structure, and
     validation rubric. Apply repository-specific spec instructions as additional constraints when
     present. Do not execute its repository-file creation phase.
-12. Redirect the complete feature-to-spec-quality output into a follow-up GitHub implementation
+11. Redirect the complete feature-to-spec-quality output into a follow-up GitHub implementation
     issue. It must use the exact headings `## Problem Statement`, `## Personas`,
     `## Value Assessment`, `## User Stories`, `## Design`, `## Tasks`, `## Out of Scope`,
     `## Acceptance Criteria`, `## Mockup Accounting Matrix`, and `## Cross-Reference`. Include the
-    final image SHA-256 beside its durable URL. Never write `.github/specs/**` or another repository
-    spec for this workflow.
-13. Include a mockup-accounting matrix in the issue mapping every normative visual/interaction
-    requirement to acceptance criteria, implementation tasks, and planned verification.
+    final image SHA-256 and durable URL only in `generative_mockup`; otherwise publish the
+    validator-bound disposition matrix. Never write `.github/specs/**` or another repository spec.
+12. Include a disposition/accounting matrix mapping every scope or applicable visual requirement
+    to acceptance criteria, implementation tasks, and planned verification.
+13. Run deterministic Plan lint and a fresh independent `plan-auditor` session against the frozen
+    body. Block on Blocker/High findings; require a fresh independent remediation recheck. Patch or
+    explicitly disposition every Medium with an owner and rationale.
 14. Freeze contracts, architecture, states, bounds, privacy, rollout, subagent ownership, tests,
     out-of-scope behavior, and rollback.
 15. Follow the publication transaction in [artifact-publication.md](references/artifact-publication.md):
-    preflight the issue body, publish the issue, attach or durably host the final mockup, update both
+    preflight the issue body, publish the issue, attach or durably host the final mockup only in
+    `generative_mockup`, update both
     issue bodies with reciprocal URLs, then read both back remotely.
     Run the local preflight before issue creation or completion:
 
     ```text
-    python3 <skill-dir>/scripts/preflight_plan.py <issue-body.md> --final-image <mockup.png>
+    python3 <skill-dir>/scripts/preflight_plan.py <issue-body.md> \
+      --visual-disposition <visual-disposition.json> [--final-image <mockup.png>]
     ```
 
     For a private GitHub repository attachment, also pass
     `--github-issue-url https://github.com/<owner>/<repo>/issues/<number>`. The preflight resolves
     the durable `github.com/user-attachments/...` URL through authenticated rendered-issue
     read-back and still requires the fetched bytes to match the local image SHA-256.
-16. Run the Plan execution auditor and validator only after the final mockup URL, SHA, acceptance
-    criteria, mockup matrix, tasks, and reciprocal body links survive remote publication.
-17. If durable mockup publication fails, keep the Plan issue explicitly marked blocked, do not
+16. Read the final issue body back, bind its canonical hash, and obtain a fresh independent
+    `final_remote` Plan audit for those exact bytes.
+17. Parse the stable task grammar and recompute `graph-policy/v1`. For `NO_GRAPH`, retain the
+    validator receipt. For `GRAPH_REQUIRED`, use bundled `plan-to-graph` to freeze an exact draft
+    and stop for explicit authorization of that draft before any child-issue or relationship write.
+    After authorization, publish one item at a time and verify the complete native graph remotely.
+18. Run the Plan execution auditor and validator only after all disposition, audit, task, graph,
+    acceptance, matrix, and reciprocal-link evidence survives remote publication.
+19. In `generative_mockup`, if durable mockup publication fails, keep the Plan issue explicitly
+    marked blocked; do not
     claim Plan completion or an implementation approval gate, and print the repair invocation.
-18. Produce a compact implementation invocation only after a `VALID` Plan receipt; do not require
+20. Produce a compact implementation invocation only after a `VALID` Plan receipt; do not require
     the user to paste the harness.
 
 Exit only when the Plan Exit Contract in the reference is satisfied.
@@ -335,9 +367,10 @@ Goal: implement the frozen contract and prove the outcome.
 
 Before mutation:
 
-1. Validate the GitHub implementation issue against every item in the Plan Exit Contract. Confirm
-   its linked research issue, feature-to-spec-quality content, normative final ImageGen mockup,
-   mockup-accounting matrix, cross-links, and GitHub-issue-only authority. If any item is missing,
+1. Validate the GitHub implementation issue against every item in the Plan Exit Contract.
+   Recompute visual applicability from the approved tasks and intended changed paths. Confirm its
+   linked research issue, feature-to-spec-quality content, disposition-required visual evidence,
+   accounting matrix, cross-links, and GitHub-issue-only authority. If any item is missing,
    stop and return to Plan Mode to repair the issue before implementation.
 2. Reconcile the implementation artifact with current code, tests, runtime, data, and external
    configuration.
@@ -366,11 +399,12 @@ An autonomous implementation transition does not imply approval to mutate protec
 8. Exercise success, zero, unavailable, partial, loading, truncation, privacy, accessibility, and
    responsive states as applicable.
 9. Run a fresh read-only test-coverage reviewer that maps every GitHub issue acceptance criterion
-   and mockup-accounting row to meaningful coverage.
-10. Run a separate fresh read-only acceptance/visual reviewer that compares the implementation
-    directly with the normative mockup and reports every difference.
-11. Maintain a mockup-gap ledger. Fix every unexplained difference; document and obtain approval
-    for any intentional deviation. Completion requires zero unexplained gaps.
+   and accounting row to meaningful coverage.
+10. Recompute visual applicability from the actual diff and runtime surfaces. Run a separate
+    acceptance/visual reviewer only for `runtime_capture` or `generative_mockup`.
+11. When a visual mode applies, maintain a visual-gap ledger. Fix every unexplained difference;
+    document and obtain approval for any intentional deviation. Completion requires zero
+    unexplained gaps.
 12. Verify every reviewer finding before fixing it; rerun the relevant reviewer after material
     changes.
 13. Run targeted checks, canonical validation, CI mirror, and stack checks required by the repo.
@@ -423,8 +457,8 @@ This is a convenience loop that invokes the same modes without weakening them:
 
 1. Execute Research Mode and satisfy the complete Research Exit Contract before transition.
 2. Execute Plan Mode and satisfy the complete Plan Exit Contract before transition, including the
-   tournament, ImageGen, confidence, feature-to-spec redirection, GitHub issue, and mockup-accounting
-   requirements.
+   tournament, visual disposition, applicable evidence mode, confidence, feature-to-spec
+   redirection, Plan audit, graph policy, GitHub issue, and accounting requirements.
 3. Execute the complete Implement Orientation Contract and stop for explicit approval.
 4. After approval, execute Implement Mode and satisfy the complete Implement Exit Contract.
 5. Open the PR and report the Review invocation.
@@ -433,8 +467,9 @@ Even in orchestrate mode:
 
 - do not skip durable artifacts;
 - do not let contestants judge themselves;
-- do not skip contestant or final-winner ImageGen;
-- do not advance with final visual confidence below `7/10`;
+- do not skip contestant or final-winner ImageGen when `generative_mockup` applies;
+- do not generate images in `none` or `runtime_capture`;
+- do not advance with synthesis confidence below `7/10`;
 - do not begin implementation before the orientation gate;
 - do not perform protected external writes without separate approval;
 - do not collapse review into automatic acceptance of comments.

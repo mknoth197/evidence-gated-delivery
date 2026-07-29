@@ -17,8 +17,9 @@ Each artifact must include:
 Required artifact types:
 
 - Research: GitHub research issue.
-- Plan: follow-up GitHub implementation issue with the final ImageGen mockup attached or durably
-  linked.
+- Plan: follow-up GitHub implementation issue with a validator-bound visual disposition and its
+  required evidence. A final ImageGen mockup is attached or durably linked only for
+  `generative_mockup`.
 - Implement: branch, commit, and pull request linked to both issues.
 - Review: dispositions and verification recorded on the pull request.
 
@@ -31,6 +32,12 @@ Before a Plan or implementation transition, remotely read the candidate issue an
 same workstream as its predecessor: problem, user/surface, decision, source/data contract, and
 non-goals. A nearby issue about the same technology is not interchangeable authority. Record a
 separate artifact chain for each initiative.
+
+A visual disposition is derived from the complete scoped issue, acceptance criteria, tasks,
+affected modules, intended paths, user direction, and repository evidence. `none` requires
+positive complete nonvisual coverage; `runtime_capture` requires current runtime evidence but no
+ImageGen; `generative_mockup` requires the complete visual tournament and publication contract.
+Recompute it from intended paths at Implement Orientation and the actual diff at Review.
 
 A normative visual for a user-facing change must be based on a current authenticated product capture
 or an equally current executable reference. A concept visual based on an assumed shell must be
@@ -91,28 +98,35 @@ Required:
   initiatives remain in separate artifact chains;
 - shared evidence packet frozen;
 - non-negotiable constraints frozen before ideation;
+- `plan-protocol/v2` runs have a valid event chain, canonical issue-body hash, deterministic Plan
+  lint, and authenticated Plan-audit lineage;
 - exactly three independent contestant subagents produced meaningfully different concepts;
-- every submission includes its reasoned concept and an ImageGen visual;
+- every submission includes its reasoned concept; ImageGen visuals are required only for
+  `generative_mockup`;
 - exactly two fresh, non-contestant judge subagents independently scored all complete submissions
   using one rubric;
 - winning decision and both judge verdicts recorded;
 - feasible differentiators from losing submissions merged into the winner, with concrete reasons
   for rejected differentiators;
-- a dedicated synthesized final-winner ImageGen mockup exists;
-- orchestrator confidence is recorded and is at least `7/10`;
-- every sub-7 confidence result triggered another ImageGen iteration and reassessment;
-- the final mockup is normative;
+- a dedicated synthesized final-winner ImageGen mockup exists when `generative_mockup` applies;
+- synthesis confidence is recorded and is at least `7/10`;
+- every sub-7 visual confidence result triggered another ImageGen iteration and reassessment when
+  `generative_mockup` applies;
+- the final mockup is normative when `generative_mockup` applies;
 - acceptance criteria cover interactions and non-happy states;
-- a mockup-accounting matrix maps every visible element, interaction, state, label, data mapping,
-  responsive rule, and accessibility behavior to acceptance criteria, implementation tasks, and
-  verification;
+- a disposition/accounting matrix maps every scope or applicable visual requirement to acceptance
+  criteria, implementation tasks, and verification;
 - feature-to-spec EARS patterns, personas, value assessment, diagrams, ambiguity handling, task
   structure, and validation rubric were applied;
 - the complete plan is in a follow-up GitHub implementation issue, not `.github/specs/**`;
 - architecture, contracts, bounds, privacy, rollout, ownership, and testing frozen;
 - explicit out-of-scope list present;
 - research and implementation issues cross-link each other;
-- final mockup is attached or durably linked from the implementation issue;
+- final mockup is attached or durably linked from the implementation issue when
+  `generative_mockup` applies;
+- stable tasks parse without ambiguity and `graph-policy/v1` is recomputed;
+- `GRAPH_REQUIRED` has an exact authorized draft plus remotely verified native graph;
+- `NO_GRAPH` has a validator-recomputed receipt;
 - external publication claims include successful mutation, remote read-back, durable URL/hash, and
   issue-body linkage; composer state or an attachment-only comment does not qualify;
 - implementation invocation produced.
@@ -122,7 +136,7 @@ Required:
 Before mutation, report:
 
 - validation that every Plan Exit Contract item is satisfied by the GitHub implementation issue;
-- authoritative artifact and normative visuals;
+- authoritative artifact, current visual disposition, and applicable evidence;
 - current branch/worktree cleanliness;
 - plan-versus-current-code conflicts;
 - frozen API/domain/component contracts;

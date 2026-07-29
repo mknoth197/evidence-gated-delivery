@@ -13,6 +13,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from plan_protocol import append_plan_event
+
 
 def git(root: Path, *args: str) -> str:
     result = subprocess.run(
@@ -89,7 +95,7 @@ def main() -> int:
         "initial_spec_status": spec_status,
         "initial_spec_hashes": spec_hashes(root),
         "approved_artifact_hosts": [],
-        "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
+        "workflow_version": "evidence-gated-delivery/plan-protocol-v2",
         "automation_policy": {
             "default_mode": "autonomous",
             "auto_transition_min_confidence": 8,
@@ -119,7 +125,38 @@ def main() -> int:
         "contestant_images": [],
         "judge_rubric": [],
         "semantic_visual_reviews": [],
+        "visual_artifact_disposition": {
+            "policy_version": "visual-applicability/v1",
+            "decision": "",
+            "evidence_mode": "",
+            "matched_triggers": [],
+            "scoped_components": [],
+            "evidence": [],
+            "uncertainty": [],
+            "scope_inventory_status": "",
+            "scope_inventory_sha256": "",
+            "phase_binding": {
+                "phase": "plan",
+                "authoritative_issue_body_sha256": "",
+                "recompute_at": ["implement-orientation", "review"],
+            },
+            "evaluated_at": "",
+        },
+        "runtime_visual_evidence": [],
+        "visual_user_directions": [],
+        "rejected_visual_artifacts": [],
+        "plan_protocol_version": "plan-protocol/v2",
+        "plan_protocol_initialized_at": now_text,
+        "plan_events": [],
+        "plan_audits": [],
+        "graph_policy_receipt": {},
+        "graph_capability_receipt": {},
+        "graph_draft": {},
+        "graph_authorization": {},
+        "graph_actions": [],
+        "graph_remote_state": {},
         "selected_winner": "",
+        "synthesis_confidence": 0,
         "synthesized_differentiators": [],
         "rejected_differentiators": [],
         "final_image_iterations": [],
@@ -148,6 +185,15 @@ def main() -> int:
         "continuing_to": "",
         "next_invocation": "",
     }
+    append_plan_event(
+        manifest["plan_events"],
+        "protocol_initialized",
+        {
+            "plan_protocol_version": manifest["plan_protocol_version"],
+            "starting_commit": manifest["starting_commit"],
+        },
+        recorded_at=now_text,
+    )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(manifest, indent=2) + "\n")
