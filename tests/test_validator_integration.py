@@ -268,6 +268,17 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                 )
         self.assertTrue(any("required role marker" in error for error in errors))
 
+    def test_plaintext_role_text_cannot_replace_exact_coverage_task_name(self):
+        self.assertFalse(
+            validator.persisted_delegation_role_matches(
+                {
+                    "task_name": "generic_review",
+                    "message": "Act as Test-Coverage Reviewer",
+                },
+                "Test-Coverage Reviewer",
+            )
+        )
+
     def test_rejects_unauthenticated_test_coverage_receipt(self):
         errors: list[str] = []
         receipt = self.reviewer()
@@ -416,6 +427,28 @@ No UI.
             event_id="019f0000-0000-7000-8000-000000000199",
         )
         manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            errors,
+            skip_remote=True,
+        )
+        self.assertTrue(any("cannot downgrade" in error for error in errors), errors)
+
+    def test_migrated_v2_cannot_hide_downgrade_by_deleting_events(self):
+        manifest: dict[str, object] = {
+            "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
+            "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V1,
+            "plan_events": [],
+        }
+        plan_protocol.migrate_manifest_to_v2(
+            manifest,
+            recorded_at="2026-07-29T12:00:00Z",
+            event_id="019f0000-0000-7000-8000-000000000299",
+        )
+        manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        manifest["plan_events"] = []
         errors: list[str] = []
         validator.validate_plan_protocol_evidence(
             manifest,

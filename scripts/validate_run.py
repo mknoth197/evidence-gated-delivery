@@ -27,6 +27,7 @@ from visual_applicability import validate_disposition
 from plan_protocol import (
     PLAN_PROTOCOL_V1,
     PLAN_PROTOCOL_V2,
+    WORKFLOW_VERSION_V2,
     PlanProtocolError,
     evaluate_graph_policy,
     issue_body_sha256,
@@ -480,12 +481,17 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
             value = None
         if isinstance(value, dict):
             parsed = value
-        elif expected_marker.lower() in arguments.lower():
+        elif (
+            expected_marker != "Test-Coverage Reviewer"
+            and expected_marker.lower() in arguments.lower()
+        ):
             return True
+    task_name = str(parsed.get("task_name", "")).lower()
+    if expected_marker == "Test-Coverage Reviewer":
+        return task_name == "test_coverage_reviewer"
     message = parsed.get("message")
     if isinstance(message, str) and expected_marker.lower() in message.lower():
         return True
-    task_name = str(parsed.get("task_name", "")).lower()
     tokens = set(re.findall(r"[a-z0-9]+", task_name))
     if expected_marker == "Independent Plan spec auditor":
         return bool(
@@ -494,8 +500,6 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
             )
             and not tokens & {"execution", "phase", "transition"}
         )
-    if expected_marker == "Test-Coverage Reviewer":
-        return task_name == "test_coverage_reviewer"
     transition = re.fullmatch(
         r"phase transition judge: ([a-z-]+) -> ([a-z-]+)", expected_marker
     )
@@ -1138,7 +1142,7 @@ def validate_plan_protocol_evidence(
         errors.extend(event_errors)
         workflow_proves_v2 = (
             data.get("workflow_version")
-            == "evidence-gated-delivery/plan-protocol-v2"
+            == WORKFLOW_VERSION_V2
         )
         if not event_errors and isinstance(events, list):
             proves_v2 = any(

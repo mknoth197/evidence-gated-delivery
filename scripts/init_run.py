@@ -17,7 +17,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from plan_protocol import append_plan_event
+from plan_protocol import WORKFLOW_VERSION_V2, append_plan_event
 
 
 def git(root: Path, *args: str) -> str:
@@ -95,7 +95,7 @@ def main() -> int:
         "initial_spec_status": spec_status,
         "initial_spec_hashes": spec_hashes(root),
         "approved_artifact_hosts": [],
-        "workflow_version": "evidence-gated-delivery/plan-protocol-v2",
+        "workflow_version": WORKFLOW_VERSION_V2,
         "automation_policy": {
             "default_mode": "autonomous",
             "auto_transition_min_confidence": 8,

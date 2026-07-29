@@ -141,6 +141,9 @@ New manifests include `plan_protocol_version: plan-protocol/v2`, a `protocol_ini
 Plan-audit receipts, graph-policy receipt, and graph transaction fields. The full schemas and
 legacy/migration rules are defined in [plan-protocol.md](plan-protocol.md). A missing version always
 fails closed; a legacy run must explicitly retain `plan-protocol/v1` before resume or migration.
+Migration also persists `workflow_version: evidence-gated-delivery/plan-protocol-v2` as the
+activation root outside the deletable event chain; restoring v1 after migration therefore fails
+even if migration events are removed.
 
 `plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
 only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability

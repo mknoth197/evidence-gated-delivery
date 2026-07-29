@@ -9,8 +9,11 @@ artifacts; manifests and checkpoint receipts are execution evidence.
 - New runs record `plan_protocol_version: plan-protocol/v2`.
 - A legacy manifest must explicitly retain `plan-protocol/v1`; a missing field fails closed.
 - Supported values are `plan-protocol/v1` and `plan-protocol/v2`; every other value fails closed.
-- A recorded version is immutable. Migration is an explicit command that appends a
-  `protocol_migrated` event preserving the previous event-chain head.
+- A recorded version is immutable. Migration is an explicit command that switches
+  `workflow_version` to `evidence-gated-delivery/plan-protocol-v2` and appends a
+  `protocol_migrated` event preserving the previous event-chain head and prior workflow version.
+  The workflow-version marker is the validator-bound activation root outside the event chain, so
+  deleting migration events cannot make a migrated run eligible for legacy v1 validation.
 
 ## Canonical issue body
 

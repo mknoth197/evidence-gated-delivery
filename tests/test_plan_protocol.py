@@ -292,6 +292,11 @@ class EventAndMigrationTests(unittest.TestCase):
             event_id="00000000-0000-4000-8000-000000000002",
         )
         self.assertEqual(manifest["plan_protocol_version"], protocol.PLAN_PROTOCOL_V2)
+        self.assertEqual(manifest["workflow_version"], protocol.WORKFLOW_VERSION_V2)
+        self.assertEqual(
+            manifest["plan_events"][-1]["payload"]["to_workflow_version"],
+            protocol.WORKFLOW_VERSION_V2,
+        )
         self.assertEqual(manifest["plan_events"][-1]["previous_event_sha256"], original)
         self.assertEqual(
             manifest["plan_events"][-1]["payload"]["previous_event_sha256"], original

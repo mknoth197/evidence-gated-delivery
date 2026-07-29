@@ -13,6 +13,7 @@ from typing import Any, Iterable
 
 PLAN_PROTOCOL_V1 = "plan-protocol/v1"
 PLAN_PROTOCOL_V2 = "plan-protocol/v2"
+WORKFLOW_VERSION_V2 = "evidence-gated-delivery/plan-protocol-v2"
 SUPPORTED_PLAN_PROTOCOLS = frozenset((PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2))
 GRAPH_POLICY_VERSION = "graph-policy/v1"
 ZERO_HASH = "0" * 64
@@ -497,6 +498,8 @@ def migrate_manifest_to_v2(
         raise PlanProtocolError("migration requires a valid existing event chain: " + "; ".join(errors))
     previous_head = events[-1]["event_sha256"] if events else ZERO_HASH
     migrated = copy.deepcopy(manifest)
+    previous_workflow_version = migrated.get("workflow_version")
+    migrated["workflow_version"] = WORKFLOW_VERSION_V2
     migrated["plan_protocol_version"] = PLAN_PROTOCOL_V2
     append_plan_event(
         migrated.setdefault("plan_events", []),
@@ -504,6 +507,8 @@ def migrate_manifest_to_v2(
         {
             "from_version": PLAN_PROTOCOL_V1,
             "to_version": PLAN_PROTOCOL_V2,
+            "from_workflow_version": previous_workflow_version,
+            "to_workflow_version": WORKFLOW_VERSION_V2,
             "previous_event_sha256": previous_head,
         },
         recorded_at=recorded_at,
