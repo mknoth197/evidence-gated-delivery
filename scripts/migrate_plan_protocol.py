@@ -38,7 +38,10 @@ def main() -> int:
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         migrated = migrate_manifest_to_v2(
-            manifest, recorded_at=args.recorded_at, event_id=args.event_id
+            manifest,
+            recorded_at=args.recorded_at,
+            event_id=args.event_id,
+            persist_activation=not args.dry_run,
         )
         rendered = json.dumps(migrated, indent=2) + "\n"
         if not args.dry_run:

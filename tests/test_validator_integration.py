@@ -451,6 +451,10 @@ No UI.
     def test_migrated_v2_cannot_hide_downgrade_by_deleting_events(self):
         manifest: dict[str, object] = {
             "run_id": "validator-migration-deleted-events",
+            "parent_thread_id": "019f0000-0000-7000-8000-000000000388",
+            "repo_root": "/repo-a",
+            "starting_commit": "a" * 40,
+            "run_started_at": "2026-07-28T12:00:00Z",
             "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
             "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V1,
             "plan_events": [],
@@ -463,6 +467,10 @@ No UI.
         manifest["workflow_version"] = (
             "evidence-gated-delivery/continuous-improvement-v1"
         )
+        manifest["run_id"] = "replacement-run"
+        manifest["repo_root"] = "/replacement-repo"
+        manifest["starting_commit"] = "c" * 40
+        manifest["run_started_at"] = "2020-01-01T00:00:00Z"
         manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
         manifest["plan_events"] = []
         errors: list[str] = []
@@ -473,6 +481,44 @@ No UI.
             skip_remote=True,
         )
         self.assertTrue(any("cannot downgrade" in error for error in errors), errors)
+        self.assertTrue(any("run_id mismatch" in error for error in errors), errors)
+        manifest.pop("run_id")
+        missing_id_errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            missing_id_errors,
+            skip_remote=True,
+        )
+        self.assertTrue(
+            any("cannot downgrade" in error for error in missing_id_errors),
+            missing_id_errors,
+        )
+        self.assertTrue(
+            any("run_id mismatch" in error for error in missing_id_errors),
+            missing_id_errors,
+        )
+
+    def test_activation_receipt_enforces_repository_baseline(self):
+        manifest: dict[str, object] = {
+            "run_id": "validator-activation-baseline",
+            "parent_thread_id": "019f0000-0000-7000-8000-000000000389",
+            "repo_root": "/repo-a",
+            "starting_commit": "b" * 40,
+            "run_started_at": "2026-07-28T12:00:00Z",
+            "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
+            "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V1,
+            "plan_events": [],
+        }
+        plan_protocol.migrate_manifest_to_v2(
+            manifest,
+            recorded_at="2026-07-29T12:00:00Z",
+            event_id="019f0000-0000-7000-8000-000000000390",
+        )
+        manifest["repo_root"] = "/repo-b"
+        active, errors = plan_protocol.validate_protocol_activation_receipt(manifest)
+        self.assertTrue(active)
+        self.assertTrue(any("repo_root mismatch" in error for error in errors), errors)
 
     def test_v1_with_tampered_event_chain_fails_closed(self):
         manifest = self.manifest()

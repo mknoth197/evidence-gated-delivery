@@ -13,10 +13,14 @@ artifacts; manifests and checkpoint receipts are execution evidence.
   `workflow_version` to `evidence-gated-delivery/plan-protocol-v2` and appends a
   `protocol_migrated` event preserving the previous event-chain head and prior workflow version.
   Initialization and migration also persist a derived, write-once activation receipt under the
-  caller's Codex home, keyed by `run_id` and bound to the activation event, repository baseline,
-  workflow, and protocol. That external receipt is the validator-bound root outside the mutable
-  manifest and event chain, so restoring legacy fields and deleting events cannot make an
-  activated run eligible for v1 validation.
+  caller's Codex home, keyed by `run_id` and bound to the authenticated parent thread, activation
+  event, run start, repository baseline, workflow, and protocol. Validation uses direct run lookup
+  plus registry lookup anchored only on the authenticated parent thread, then compares every other
+  binding. That external receipt is the
+  validator-bound root outside the mutable manifest and event chain, so changing or removing the
+  run ID, restoring legacy fields, and deleting events cannot make an activated run eligible for
+  v1 validation. Migration `--dry-run` prepares and prints the candidate without writing either
+  the manifest or activation registry.
 
 ## Canonical issue body
 

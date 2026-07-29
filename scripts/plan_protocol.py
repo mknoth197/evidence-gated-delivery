@@ -110,10 +110,12 @@ def record_protocol_activation(
     path = protocol_activation_receipt_path(run_id)
     payload = {
         "run_id": run_id.strip(),
+        "parent_thread_id": manifest.get("parent_thread_id"),
         "plan_protocol_version": PLAN_PROTOCOL_V2,
         "workflow_version": WORKFLOW_VERSION_V2,
         "repo_root": manifest.get("repo_root"),
         "starting_commit": manifest.get("starting_commit"),
+        "run_started_at": manifest.get("run_started_at"),
         "activated_at": event.get("recorded_at"),
         "activation_event_id": event.get("event_id"),
         "activation_event_sha256": event.get("event_sha256"),
@@ -151,11 +153,31 @@ def validate_protocol_activation_receipt(
     """Read and authenticate any external v2 activation receipt for this run."""
 
     run_id = manifest.get("run_id")
-    if not isinstance(run_id, str) or not run_id.strip():
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    root = codex_home / "evidence-gated-delivery" / "protocol-activations"
+    paths: list[Path] = []
+    if isinstance(run_id, str) and run_id.strip():
+        direct = protocol_activation_receipt_path(run_id)
+        if direct.exists():
+            paths.append(direct)
+    if not paths and root.is_dir():
+        parent_thread_id = manifest.get("parent_thread_id")
+        if isinstance(parent_thread_id, str) and parent_thread_id.strip():
+            for candidate in sorted(root.glob("*.json")):
+                try:
+                    value = json.loads(candidate.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, json.JSONDecodeError):
+                    continue
+                if (
+                    isinstance(value, dict)
+                    and value.get("parent_thread_id") == parent_thread_id
+                ):
+                    paths.append(candidate)
+    if not paths:
         return False, []
-    path = protocol_activation_receipt_path(run_id)
-    if not path.exists():
-        return False, []
+    if len(paths) != 1:
+        return True, ["external v2 activation registry has ambiguous baseline matches"]
+    path = paths[0]
     try:
         receipt = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -167,8 +189,19 @@ def validate_protocol_activation_receipt(
     errors: list[str] = []
     if claimed != sha256_json(payload):
         errors.append("external v2 activation receipt hash mismatch")
-    if receipt.get("run_id") != run_id.strip():
-        errors.append("external v2 activation receipt run_id mismatch")
+    bindings = (
+        "run_id",
+        "parent_thread_id",
+        "repo_root",
+        "starting_commit",
+        "run_started_at",
+    )
+    for field in bindings:
+        expected = manifest.get(field)
+        if field == "run_id" and isinstance(expected, str):
+            expected = expected.strip()
+        if receipt.get(field) != expected:
+            errors.append(f"external v2 activation receipt {field} mismatch")
     if receipt.get("plan_protocol_version") != PLAN_PROTOCOL_V2:
         errors.append("external activation receipt must bind plan-protocol/v2")
     if receipt.get("workflow_version") != WORKFLOW_VERSION_V2:
@@ -576,6 +609,7 @@ def migrate_manifest_to_v2(
     *,
     recorded_at: str | None = None,
     event_id: str | None = None,
+    persist_activation: bool = True,
 ) -> dict[str, Any]:
     current = effective_protocol_version(manifest)
     if current != PLAN_PROTOCOL_V1:
@@ -602,7 +636,8 @@ def migrate_manifest_to_v2(
         recorded_at=recorded_at,
         event_id=event_id,
     )
-    record_protocol_activation(migrated, migration_event)
+    if persist_activation:
+        record_protocol_activation(migrated, migration_event)
     manifest.clear()
     manifest.update(migrated)
     return manifest

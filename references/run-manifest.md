@@ -143,8 +143,10 @@ legacy/migration rules are defined in [plan-protocol.md](plan-protocol.md). A mi
 fails closed; a legacy run must explicitly retain `plan-protocol/v1` before resume or migration.
 Migration also persists `workflow_version: evidence-gated-delivery/plan-protocol-v2` and a
 write-once external activation receipt derived from `run_id`. The receipt binds the activation
-event, repository baseline, workflow, and protocol outside the mutable manifest/event chain;
-restoring legacy fields after migration therefore fails even if migration events are removed.
+event, authenticated parent thread, run start, repository baseline, workflow, and protocol outside
+the mutable manifest/event chain. Validation recovers it by exact run ID or authenticated parent
+thread alone, then compares every other binding; identity substitution or restored legacy fields
+therefore fail even if migration events are removed.
 
 `plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
 only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability

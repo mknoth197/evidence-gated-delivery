@@ -354,6 +354,22 @@ class EventAndMigrationTests(unittest.TestCase):
                 "--event-id",
                 "00000000-0000-4000-8000-000000000001",
             ]
+            dry_run = subprocess.run(
+                [*command, "--dry-run"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            self.assertEqual(
+                json.loads(path.read_text())["plan_protocol_version"],
+                protocol.PLAN_PROTOCOL_V1,
+            )
+            self.assertFalse(
+                protocol.protocol_activation_receipt_path(
+                    "migration-cli-atomic"
+                ).exists()
+            )
             result = subprocess.run(command, text=True, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(path.read_text())["plan_protocol_version"], protocol.PLAN_PROTOCOL_V2)
