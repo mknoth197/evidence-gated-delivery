@@ -364,12 +364,20 @@ No UI.
                 recorded_at=f"2026-07-29T12:{offset - 90:02d}:00Z",
                 event_id=f"00000000-0000-4000-8000-{offset:012d}",
             )
-        return {
+        manifest = {
+            "run_id": "validator-v2-manifest",
+            "parent_thread_id": "019f0000-0000-7000-8000-000000000094",
+            "repo_root": "/repo-v2",
+            "starting_commit": "d" * 40,
+            "run_started_at": "2026-07-29T11:59:00Z",
+            "workflow_version": plan_protocol.WORKFLOW_VERSION_V2,
             "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V2,
             "plan_events": events,
             "plan_audits": [audit],
             "graph_policy_receipt": policy,
         }
+        plan_protocol.record_protocol_activation(manifest, events[0])
+        return manifest
 
     def test_accepts_v2_no_graph_evidence(self):
         errors: list[str] = []
@@ -519,6 +527,47 @@ No UI.
         active, errors = plan_protocol.validate_protocol_activation_receipt(manifest)
         self.assertTrue(active)
         self.assertTrue(any("repo_root mismatch" in error for error in errors), errors)
+
+    def test_activation_receipt_enforces_workflow_and_protocol_bindings(self):
+        workflow_manifest = self.manifest()
+        workflow_manifest["workflow_version"] = "legacy-workflow"
+        active, workflow_errors = (
+            plan_protocol.validate_protocol_activation_receipt(workflow_manifest)
+        )
+        self.assertTrue(active)
+        self.assertTrue(
+            any("workflow_version mismatch" in error for error in workflow_errors),
+            workflow_errors,
+        )
+
+        protocol_manifest = self.manifest()
+        protocol_manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        active, protocol_errors = (
+            plan_protocol.validate_protocol_activation_receipt(protocol_manifest)
+        )
+        self.assertTrue(active)
+        self.assertTrue(
+            any(
+                "plan_protocol_version mismatch" in error
+                for error in protocol_errors
+            ),
+            protocol_errors,
+        )
+
+    def test_v2_manifest_requires_external_activation_receipt(self):
+        manifest = self.manifest()
+        plan_protocol.protocol_activation_receipt_path(manifest["run_id"]).unlink()
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            errors,
+            skip_remote=True,
+        )
+        self.assertTrue(
+            any("requires a durable external activation receipt" in error for error in errors),
+            errors,
+        )
 
     def test_v1_with_tampered_event_chain_fails_closed(self):
         manifest = self.manifest()

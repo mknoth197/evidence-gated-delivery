@@ -19,8 +19,9 @@ artifacts; manifests and checkpoint receipts are execution evidence.
   binding. That external receipt is the
   validator-bound root outside the mutable manifest and event chain, so changing or removing the
   run ID, restoring legacy fields, and deleting events cannot make an activated run eligible for
-  v1 validation. Migration `--dry-run` prepares and prints the candidate without writing either
-  the manifest or activation registry.
+  v1 validation. V2 validation requires the receipt, exact manifest/receipt identity fields, and
+  the bound activation event in the hash chain. Migration `--dry-run` prepares and prints the
+  candidate without writing either the manifest or activation registry.
 
 ## Canonical issue body
 

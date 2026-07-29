@@ -146,7 +146,8 @@ write-once external activation receipt derived from `run_id`. The receipt binds 
 event, authenticated parent thread, run start, repository baseline, workflow, and protocol outside
 the mutable manifest/event chain. Validation recovers it by exact run ID or authenticated parent
 thread alone, then compares every other binding; identity substitution or restored legacy fields
-therefore fail even if migration events are removed.
+therefore fail even if migration events are removed. A v2 manifest without its authenticated
+external receipt, or without the receipt-bound activation event, fails closed.
 
 `plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
 only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability

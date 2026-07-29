@@ -195,6 +195,8 @@ def validate_protocol_activation_receipt(
         "repo_root",
         "starting_commit",
         "run_started_at",
+        "workflow_version",
+        "plan_protocol_version",
     )
     for field in bindings:
         expected = manifest.get(field)
@@ -206,6 +208,23 @@ def validate_protocol_activation_receipt(
         errors.append("external activation receipt must bind plan-protocol/v2")
     if receipt.get("workflow_version") != WORKFLOW_VERSION_V2:
         errors.append("external activation receipt must bind the v2 workflow")
+    events = manifest.get("plan_events")
+    matching_event = next(
+        (
+            event
+            for event in events or []
+            if isinstance(event, dict)
+            and event.get("event_id") == receipt.get("activation_event_id")
+        ),
+        None,
+    )
+    if matching_event is None:
+        errors.append("external v2 activation event is missing from the manifest chain")
+    else:
+        if matching_event.get("event_sha256") != receipt.get("activation_event_sha256"):
+            errors.append("external v2 activation event hash mismatch")
+        if matching_event.get("recorded_at") != receipt.get("activated_at"):
+            errors.append("external v2 activation timestamp mismatch")
     return True, errors
 
 

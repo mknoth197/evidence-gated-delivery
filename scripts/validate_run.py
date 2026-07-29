@@ -1139,6 +1139,11 @@ def validate_plan_protocol_evidence(
         return
     external_v2_active, activation_errors = validate_protocol_activation_receipt(data)
     errors.extend(activation_errors)
+    if (
+        data.get("plan_protocol_version") == PLAN_PROTOCOL_V2
+        or data.get("workflow_version") == WORKFLOW_VERSION_V2
+    ) and not external_v2_active:
+        errors.append("plan-protocol/v2 requires a durable external activation receipt")
     events = data.get("plan_events")
     if data.get("plan_protocol_version") == PLAN_PROTOCOL_V1:
         event_errors = validate_plan_events(events) if events is not None else []
