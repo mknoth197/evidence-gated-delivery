@@ -34,8 +34,12 @@ def _sanitize_evidence(value: Any) -> Any:
 
     if isinstance(value, dict):
         return {
-            str(key): _sanitize_evidence(nested)
-            for key, nested in value.items()
+            (
+                f"[REDACTED_KEY_{index}]"
+                if privacy_violations(str(key))
+                else str(key)
+            ): _sanitize_evidence(nested)
+            for index, (key, nested) in enumerate(value.items(), start=1)
         }
     if isinstance(value, (list, tuple)):
         return [_sanitize_evidence(nested) for nested in value]

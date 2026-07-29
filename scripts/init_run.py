@@ -17,7 +17,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from plan_protocol import WORKFLOW_VERSION_V2, append_plan_event
+from plan_protocol import (
+    WORKFLOW_VERSION_V2,
+    append_plan_event,
+    record_protocol_activation,
+)
 
 
 def git(root: Path, *args: str) -> str:
@@ -185,7 +189,7 @@ def main() -> int:
         "continuing_to": "",
         "next_invocation": "",
     }
-    append_plan_event(
+    activation_event = append_plan_event(
         manifest["plan_events"],
         "protocol_initialized",
         {
@@ -194,6 +198,7 @@ def main() -> int:
         },
         recorded_at=now_text,
     )
+    record_protocol_activation(manifest, activation_event)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(manifest, indent=2) + "\n")

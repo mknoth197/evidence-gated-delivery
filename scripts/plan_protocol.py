@@ -6,9 +6,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 PLAN_PROTOCOL_V1 = "plan-protocol/v1"
@@ -89,12 +91,98 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def protocol_activation_receipt_path(run_id: str) -> Path:
+    """Return the derived write-once v2 activation receipt path for a run."""
+
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise PlanProtocolError("v2 activation requires a non-empty run_id")
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    name = hashlib.sha256(run_id.strip().encode("utf-8")).hexdigest() + ".json"
+    return codex_home / "evidence-gated-delivery" / "protocol-activations" / name
+
+
+def record_protocol_activation(
+    manifest: dict[str, Any], event: dict[str, Any]
+) -> dict[str, Any]:
+    """Persist immutable activation evidence outside the mutable manifest/event chain."""
+
+    run_id = manifest.get("run_id")
+    path = protocol_activation_receipt_path(run_id)
+    payload = {
+        "run_id": run_id.strip(),
+        "plan_protocol_version": PLAN_PROTOCOL_V2,
+        "workflow_version": WORKFLOW_VERSION_V2,
+        "repo_root": manifest.get("repo_root"),
+        "starting_commit": manifest.get("starting_commit"),
+        "activated_at": event.get("recorded_at"),
+        "activation_event_id": event.get("event_id"),
+        "activation_event_sha256": event.get("event_sha256"),
+    }
+    receipt = {**payload, "receipt_sha256": sha256_json(payload)}
+    rendered = json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise PlanProtocolError("v2 activation receipt is unreadable") from exc
+        if existing != receipt:
+            raise PlanProtocolError("v2 activation receipt already exists with different evidence")
+        return receipt
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(rendered)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return receipt
+
+
+def validate_protocol_activation_receipt(
+    manifest: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    """Read and authenticate any external v2 activation receipt for this run."""
+
+    run_id = manifest.get("run_id")
+    if not isinstance(run_id, str) or not run_id.strip():
+        return False, []
+    path = protocol_activation_receipt_path(run_id)
+    if not path.exists():
+        return False, []
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return True, ["external v2 activation receipt is unreadable"]
+    if not isinstance(receipt, dict):
+        return True, ["external v2 activation receipt must be an object"]
+    claimed = receipt.get("receipt_sha256")
+    payload = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+    errors: list[str] = []
+    if claimed != sha256_json(payload):
+        errors.append("external v2 activation receipt hash mismatch")
+    if receipt.get("run_id") != run_id.strip():
+        errors.append("external v2 activation receipt run_id mismatch")
+    if receipt.get("plan_protocol_version") != PLAN_PROTOCOL_V2:
+        errors.append("external activation receipt must bind plan-protocol/v2")
+    if receipt.get("workflow_version") != WORKFLOW_VERSION_V2:
+        errors.append("external activation receipt must bind the v2 workflow")
+    return True, errors
+
+
 def privacy_violations(value: Any, path: str = "$") -> list[str]:
     """Return paths containing concrete credential or direct-contact material."""
 
     violations: list[str] = []
     if isinstance(value, dict):
         for key, nested in value.items():
+            violations.extend(privacy_violations(str(key), f"{path}.<key>"))
             violations.extend(privacy_violations(nested, f"{path}.{key}"))
     elif isinstance(value, list):
         for index, nested in enumerate(value):
@@ -501,7 +589,7 @@ def migrate_manifest_to_v2(
     previous_workflow_version = migrated.get("workflow_version")
     migrated["workflow_version"] = WORKFLOW_VERSION_V2
     migrated["plan_protocol_version"] = PLAN_PROTOCOL_V2
-    append_plan_event(
+    migration_event = append_plan_event(
         migrated.setdefault("plan_events", []),
         "protocol_migrated",
         {
@@ -514,6 +602,7 @@ def migrate_manifest_to_v2(
         recorded_at=recorded_at,
         event_id=event_id,
     )
+    record_protocol_activation(migrated, migration_event)
     manifest.clear()
     manifest.update(migrated)
     return manifest

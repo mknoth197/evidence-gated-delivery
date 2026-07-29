@@ -12,8 +12,11 @@ artifacts; manifests and checkpoint receipts are execution evidence.
 - A recorded version is immutable. Migration is an explicit command that switches
   `workflow_version` to `evidence-gated-delivery/plan-protocol-v2` and appends a
   `protocol_migrated` event preserving the previous event-chain head and prior workflow version.
-  The workflow-version marker is the validator-bound activation root outside the event chain, so
-  deleting migration events cannot make a migrated run eligible for legacy v1 validation.
+  Initialization and migration also persist a derived, write-once activation receipt under the
+  caller's Codex home, keyed by `run_id` and bound to the activation event, repository baseline,
+  workflow, and protocol. That external receipt is the validator-bound root outside the mutable
+  manifest and event chain, so restoring legacy fields and deleting events cannot make an
+  activated run eligible for v1 validation.
 
 ## Canonical issue body
 
@@ -147,7 +150,8 @@ dependency edges, and action ordering from authenticated remote read-back.
 
 Public artifacts and receipts contain only public issue metadata, stable task identifiers,
 timestamps, hashes, and bounded findings. Never include credentials, tokens, private prompts, PII,
-or unsupported performance or quality claims.
+or unsupported performance or quality claims. Privacy inspection and evidence redaction cover
+dictionary keys as well as values.
 
 The bundled `plan-auditor` and `plan-to-graph` skills are portable reimplementations influenced by
 the BSD-2-Clause `lousy-agents/skills` project. Their provenance record and required license notice

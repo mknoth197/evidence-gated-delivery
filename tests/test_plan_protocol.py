@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -235,6 +236,18 @@ class TaskAndPolicyTests(unittest.TestCase):
 
 
 class EventAndMigrationTests(unittest.TestCase):
+    def setUp(self):
+        self._temporary_codex_home = tempfile.TemporaryDirectory()
+        self._previous_codex_home = os.environ.get("CODEX_HOME")
+        os.environ["CODEX_HOME"] = self._temporary_codex_home.name
+
+    def tearDown(self):
+        if self._previous_codex_home is None:
+            os.environ.pop("CODEX_HOME", None)
+        else:
+            os.environ["CODEX_HOME"] = self._previous_codex_home
+        self._temporary_codex_home.cleanup()
+
     def test_append_and_validate_hash_chain(self):
         events: list[dict] = []
         first = protocol.append_plan_event(
@@ -275,6 +288,7 @@ class EventAndMigrationTests(unittest.TestCase):
 
     def test_migration_preserves_legacy_chain_head(self):
         manifest = {
+            "run_id": "migration-preserves-chain",
             "plan_protocol_version": protocol.PLAN_PROTOCOL_V1,
             "run_started_at": "2026-07-28T10:00:00Z",
             "plan_events": [],
@@ -325,6 +339,7 @@ class EventAndMigrationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "plan_protocol_version": protocol.PLAN_PROTOCOL_V1,
+                        "run_id": "migration-cli-atomic",
                         "run_started_at": "2026-07-28T10:00:00Z",
                         "plan_events": [],
                     }
@@ -566,11 +581,13 @@ class PrivacyTests(unittest.TestCase):
                 "safe": "Do not publish tokens or credentials.",
                 "token": "ghp_abcdefghijklmnopqrstuvwxyz123456",
                 "contact": "person@example.com",
+                "ghp_abcdefghijklmnopqrstuvwxyz654321": "secret in key",
             }
         )
-        self.assertEqual(len(violations), 2)
+        self.assertEqual(len(violations), 3)
         self.assertTrue(any("$.token" in value for value in violations))
         self.assertTrue(any("$.contact" in value for value in violations))
+        self.assertTrue(any("<key>" in value for value in violations))
 
 
 if __name__ == "__main__":

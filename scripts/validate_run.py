@@ -37,6 +37,7 @@ from plan_protocol import (
     validate_graph_draft,
     validate_plan_audits,
     validate_plan_events,
+    validate_protocol_activation_receipt,
     validate_protocol_version,
     verify_final_graph,
     verify_graph_authorization,
@@ -1136,6 +1137,8 @@ def validate_plan_protocol_evidence(
     errors.extend(protocol_errors)
     if protocol_errors:
         return
+    external_v2_active, activation_errors = validate_protocol_activation_receipt(data)
+    errors.extend(activation_errors)
     events = data.get("plan_events")
     if data.get("plan_protocol_version") == PLAN_PROTOCOL_V1:
         event_errors = validate_plan_events(events) if events is not None else []
@@ -1163,10 +1166,10 @@ def validate_plan_protocol_evidence(
             )
         else:
             proves_v2 = False
-        if workflow_proves_v2 or proves_v2:
+        if external_v2_active or workflow_proves_v2 or proves_v2:
             errors.append(
                 "plan_protocol_version cannot downgrade to plan-protocol/v1 "
-                "after v2 workflow initialization or hash-chained migration"
+                "after durable v2 activation, workflow initialization, or migration"
             )
         return
     if data.get("plan_protocol_version") != PLAN_PROTOCOL_V2:

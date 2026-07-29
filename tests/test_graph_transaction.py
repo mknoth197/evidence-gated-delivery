@@ -211,6 +211,7 @@ class GraphTransactionTests(unittest.TestCase):
                     "ok": True,
                     "mutation_id": "safe-id",
                     "detail": "ghp_abcdefghijklmnopqrstuvwxyz123456",
+                    "ghp_abcdefghijklmnopqrstuvwxyz654321": "secret in key",
                 },
                 readback=lambda: copy.deepcopy(state),
                 recorder=lambda record: durable.append(copy.deepcopy(record)),
@@ -225,6 +226,44 @@ class GraphTransactionTests(unittest.TestCase):
         self.assertEqual(blocked["result"]["mutation"]["detail"], "[REDACTED]")
         self.assertEqual(blocked["result"]["readback"], state)
         self.assertNotIn("ghp_", json.dumps(blocked))
+
+    def test_verified_record_redacts_sensitive_dictionary_keys(self):
+        draft = protocol.freeze_graph_draft(
+            self.parent, "o/r", [task("T-001")]
+        )
+        state = {"children": [], "edges": []}
+        durable = []
+
+        def runner(_action):
+            child = draft["children"][0]
+            state["children"].append(
+                {
+                    "task_id": child["task_id"],
+                    "stable_marker": child["stable_marker"],
+                    "title": child["title"],
+                    "body_sha256": child["body_sha256"],
+                    "parent_issue_url": self.parent,
+                }
+            )
+            return {
+                "ok": True,
+                "mutation_id": "safe-id",
+                "ghp_abcdefghijklmnopqrstuvwxyz654321": "secret in key",
+            }
+
+        records, _current = transaction.execute_transaction(
+            draft,
+            state,
+            guard=lambda: [],
+            runner=runner,
+            readback=lambda: copy.deepcopy(state),
+            recorder=lambda record: durable.append(copy.deepcopy(record)),
+        )
+
+        self.assertEqual([record["status"] for record in records], ["attempted", "verified"])
+        self.assertNotIn("ghp_", json.dumps(records))
+        self.assertNotIn("ghp_", json.dumps(durable))
+        self.assertIn("[REDACTED_KEY_3]", records[-1]["result"])
 
     def test_successful_mutation_with_readback_exception_records_blocked_evidence(self):
         state = {"children": [], "edges": []}

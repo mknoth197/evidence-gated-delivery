@@ -305,6 +305,17 @@ class PlanProtocolValidatorIntegrationTests(unittest.TestCase):
 No UI.
 """
 
+    def setUp(self):
+        self._temporary_codex_home = tempfile.TemporaryDirectory()
+        self._codex_home_patch = patch.dict(
+            os.environ, {"CODEX_HOME": self._temporary_codex_home.name}
+        )
+        self._codex_home_patch.start()
+
+    def tearDown(self):
+        self._codex_home_patch.stop()
+        self._temporary_codex_home.cleanup()
+
     def manifest(self) -> dict[str, object]:
         body_sha = plan_protocol.issue_body_sha256(self.body)
         tasks = plan_protocol.parse_tasks(self.body)
@@ -418,6 +429,7 @@ No UI.
 
     def test_hash_chained_v2_migration_cannot_be_downgraded_to_v1(self):
         manifest: dict[str, object] = {
+            "run_id": "validator-migration-downgrade",
             "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V1,
             "plan_events": [],
         }
@@ -438,6 +450,7 @@ No UI.
 
     def test_migrated_v2_cannot_hide_downgrade_by_deleting_events(self):
         manifest: dict[str, object] = {
+            "run_id": "validator-migration-deleted-events",
             "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
             "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V1,
             "plan_events": [],
@@ -446,6 +459,9 @@ No UI.
             manifest,
             recorded_at="2026-07-29T12:00:00Z",
             event_id="019f0000-0000-7000-8000-000000000299",
+        )
+        manifest["workflow_version"] = (
+            "evidence-gated-delivery/continuous-improvement-v1"
         )
         manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
         manifest["plan_events"] = []
