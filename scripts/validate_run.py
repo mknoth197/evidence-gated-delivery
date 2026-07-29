@@ -494,6 +494,8 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
             )
             and not tokens & {"execution", "phase", "transition"}
         )
+    if expected_marker == "Test-Coverage Reviewer":
+        return task_name == "test_coverage_reviewer"
     transition = re.fullmatch(
         r"phase transition judge: ([a-z-]+) -> ([a-z-]+)", expected_marker
     )
@@ -657,6 +659,77 @@ def github_readback(url: str, kind: str) -> tuple[str | None, str | None]:
     if not nonempty(body):
         return None, "remote body is empty"
     return body, None
+
+
+def github_pr_oids(url: str) -> tuple[dict[str, str] | None, str | None]:
+    """Read the live PR base/head commit identities from GitHub."""
+
+    command = [
+        "gh",
+        "pr",
+        "view",
+        url,
+        "--json",
+        "url,baseRefOid,headRefOid",
+    ]
+    try:
+        result = subprocess.run(
+            command, check=False, capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, str(exc)
+    payload: dict[str, Any] | None = None
+    if result.returncode == 0:
+        try:
+            candidate = json.loads(result.stdout)
+            if isinstance(candidate, dict):
+                payload = candidate
+        except json.JSONDecodeError as exc:
+            return None, str(exc)
+    else:
+        parsed = urlparse(url)
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) != 4 or parts[2] != "pull":
+            return None, "pull request URL could not be converted to a REST endpoint"
+        try:
+            fallback = subprocess.run(
+                ["gh", "api", f"repos/{parts[0]}/{parts[1]}/pulls/{parts[3]}"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return None, str(exc)
+        if fallback.returncode != 0:
+            return None, (
+                result.stderr.strip()
+                or fallback.stderr.strip()
+                or f"gh exited {fallback.returncode}"
+            )
+        try:
+            rest = json.loads(fallback.stdout)
+            payload = {
+                "url": rest.get("html_url"),
+                "baseRefOid": rest.get("base", {}).get("sha"),
+                "headRefOid": rest.get("head", {}).get("sha"),
+            }
+        except (AttributeError, json.JSONDecodeError) as exc:
+            return None, str(exc)
+    assert payload is not None
+    if payload.get("url") != url:
+        return None, f"remote URL mismatch: {payload.get('url')}"
+    base_oid = payload.get("baseRefOid")
+    head_oid = payload.get("headRefOid")
+    if not all(
+        isinstance(oid, str) and re.fullmatch(r"[0-9a-fA-F]{40}", oid)
+        for oid in (base_oid, head_oid)
+    ):
+        return None, "remote PR base/head OIDs must be full git SHAs"
+    return {
+        "base_oid": base_oid.lower(),
+        "head_oid": head_oid.lower(),
+    }, None
 
 
 def require_remote_issue(
@@ -1057,7 +1130,42 @@ def validate_plan_protocol_evidence(
 ) -> None:
     protocol_errors = validate_protocol_version(data)
     errors.extend(protocol_errors)
-    if protocol_errors or data.get("plan_protocol_version", PLAN_PROTOCOL_V1) != PLAN_PROTOCOL_V2:
+    if protocol_errors:
+        return
+    events = data.get("plan_events")
+    if data.get("plan_protocol_version") == PLAN_PROTOCOL_V1:
+        event_errors = validate_plan_events(events) if events is not None else []
+        errors.extend(event_errors)
+        workflow_proves_v2 = (
+            data.get("workflow_version")
+            == "evidence-gated-delivery/plan-protocol-v2"
+        )
+        if not event_errors and isinstance(events, list):
+            proves_v2 = any(
+                isinstance(event, dict)
+                and (
+                    (
+                        event.get("type") == "protocol_initialized"
+                        and event.get("payload", {}).get("plan_protocol_version")
+                        == PLAN_PROTOCOL_V2
+                    )
+                    or (
+                        event.get("type") == "protocol_migrated"
+                        and event.get("payload", {}).get("to_version")
+                        == PLAN_PROTOCOL_V2
+                    )
+                )
+                for event in events
+            )
+        else:
+            proves_v2 = False
+        if workflow_proves_v2 or proves_v2:
+            errors.append(
+                "plan_protocol_version cannot downgrade to plan-protocol/v1 "
+                "after v2 workflow initialization or hash-chained migration"
+            )
+        return
+    if data.get("plan_protocol_version") != PLAN_PROTOCOL_V2:
         return
     for field in (
         "plan_audits",
@@ -1068,7 +1176,6 @@ def validate_plan_protocol_evidence(
     ):
         for violation in privacy_violations(data.get(field), f"$.{field}"):
             errors.append(f"privacy sentinel: {violation}")
-    events = data.get("plan_events")
     event_errors = validate_plan_events(events)
     errors.extend(event_errors)
     event_types = {
@@ -1258,6 +1365,7 @@ def add_plan_errors(
     errors: list[str],
     skip_remote: bool,
     visual_phase: str = "plan",
+    review_paths: list[str] | None = None,
 ) -> None:
     research_body = add_research_errors(data, errors, skip_remote)
     disposition = data.get("visual_artifact_disposition")
@@ -1448,7 +1556,7 @@ def add_plan_errors(
         )
         authoritative_paths = None
         if visual_phase == "review":
-            authoritative_paths = review_changed_paths(data, errors)
+            authoritative_paths = review_paths
         validated_mode, _inventory, disposition_errors = validate_disposition(
             disposition,
             implementation_body,
@@ -1554,32 +1662,96 @@ def review_changed_paths(
     ):
         errors.append("Review requires a full starting_commit for actual-diff binding")
         return None
-    changed: set[str] = set()
-    for command in (
-        ["git", "diff", "--name-only", f"{starting_commit}..HEAD"],
-        ["git", "diff", "--name-only"],
-        ["git", "diff", "--cached", "--name-only"],
+    pull_url = data.get("pull_request_url")
+    if not pr_url(pull_url):
+        errors.append("Review requires a GitHub pull request URL for actual-diff binding")
+        return None
+    remote, remote_error = github_pr_oids(pull_url)
+    if remote_error:
+        errors.append(f"Review PR commit read-back failed: {remote_error}")
+        return None
+    assert remote is not None
+    base_oid = remote["base_oid"]
+    head_oid = remote["head_oid"]
+    if starting_commit.lower() != base_oid:
+        errors.append("starting_commit does not match the live PR base OID")
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if head.returncode != 0 or not re.fullmatch(
+        r"[0-9a-fA-F]{40}", head.stdout.strip()
     ):
-        result = subprocess.run(
-            command,
+        errors.append("failed to resolve local HEAD for Review PR binding")
+        return None
+    if head.stdout.strip().lower() != head_oid:
+        errors.append("local HEAD does not match the live PR head OID")
+    for oid, label in ((base_oid, "base"), (head_oid, "head")):
+        exists = subprocess.run(
+            ["git", "cat-file", "-e", f"{oid}^{{commit}}"],
             cwd=root,
             check=False,
             capture_output=True,
             text=True,
         )
-        if result.returncode != 0:
-            errors.append("failed to derive authoritative changed paths for visual review")
+        if exists.returncode != 0:
+            errors.append(f"live PR {label} OID is not present in the local worktree")
             return None
-        changed.update(
-            line.strip() for line in result.stdout.splitlines() if line.strip()
-        )
-    return sorted(changed)
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{base_oid}..{head_oid}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        errors.append("failed to derive authoritative changed paths from live PR OIDs")
+        return None
+    return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
 
-def validate_reviewer(entry: Any, label: str, errors: list[str]) -> str | None:
+def validate_reviewer(
+    data: dict[str, Any],
+    entry: Any,
+    label: str,
+    errors: list[str],
+    *,
+    expected_marker: str | None = None,
+) -> str | None:
     if not completed_agent(entry):
         errors.append(f"{label} must be a completed agent receipt")
         return None
+    if expected_marker is not None:
+        if entry.get("receipt_kind") != "collaboration_delegated":
+            errors.append(f"{label} must use collaboration_delegated provenance")
+            return None
+        evidence, session_error = collaboration_delegated_audit_evidence(data, entry)
+        if session_error:
+            errors.append(f"{label} session verification failed: {session_error}")
+            return None
+        assert evidence is not None
+        callback = evidence["final_message"]
+        if not persisted_delegation_role_matches(
+            evidence.get("delegation_arguments"), expected_marker
+        ):
+            errors.append(
+                f"{label} persisted delegation lacks the required role marker"
+            )
+        if entry.get("result") != callback:
+            errors.append(f"{label}.result does not match authenticated callback")
+        if entry.get("result_sha256") != hashlib.sha256(callback.encode()).hexdigest():
+            errors.append(f"{label}.result_sha256 does not match authenticated callback")
+        if timestamp(entry.get("started_at")) != timestamp(
+            evidence.get("delegation_started_at")
+        ):
+            errors.append(f"{label}.started_at does not match delegation")
+        if timestamp(entry.get("completed_at")) != timestamp(
+            evidence.get("completed_at")
+        ):
+            errors.append(f"{label}.completed_at does not match child completion")
     return entry["agent_id"].strip()
 
 
@@ -1588,8 +1760,15 @@ def add_implement_errors(
     errors: list[str],
     skip_remote: bool,
     visual_phase: str = "implement",
+    review_paths: list[str] | None = None,
 ) -> None:
-    add_plan_errors(data, errors, skip_remote, visual_phase=visual_phase)
+    add_plan_errors(
+        data,
+        errors,
+        skip_remote,
+        visual_phase=visual_phase,
+        review_paths=review_paths,
+    )
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
     mutation_at = timestamp(data.get("first_mutation_at"))
@@ -1613,7 +1792,13 @@ def add_implement_errors(
             if not nonempty(worker.get("handoff")):
                 errors.append(f"implementation_workers[{index}].handoff is required")
 
-    test_id = validate_reviewer(data.get("test_reviewer"), "test_reviewer", errors)
+    test_id = validate_reviewer(
+        data,
+        data.get("test_reviewer"),
+        "test_reviewer",
+        errors,
+        expected_marker="Test-Coverage Reviewer",
+    )
     disposition = data.get("visual_artifact_disposition")
     visual_mode = (
         disposition.get("evidence_mode")
@@ -1623,7 +1808,10 @@ def add_implement_errors(
     acceptance_id = None
     if visual_mode in {"runtime_capture", "generative_mockup"}:
         acceptance_id = validate_reviewer(
-            data.get("acceptance_reviewer"), "acceptance_reviewer", errors
+            data,
+            data.get("acceptance_reviewer"),
+            "acceptance_reviewer",
+            errors,
         )
     all_prior_ids = set(agent_ids(data.get("contestants"))) | set(agent_ids(data.get("judges")))
     all_ids = worker_ids + [value for value in (test_id, acceptance_id) if value]
@@ -1959,8 +2147,14 @@ def validate(data: dict[str, Any], phase: str, skip_remote: bool) -> list[str]:
     elif phase == "implement":
         add_implement_errors(data, errors, skip_remote)
     elif phase == "review":
-        review_changed_paths(data, errors)
-        add_implement_errors(data, errors, skip_remote, visual_phase="review")
+        review_paths = review_changed_paths(data, errors)
+        add_implement_errors(
+            data,
+            errors,
+            skip_remote,
+            visual_phase="review",
+            review_paths=review_paths,
+        )
         if data.get("review_dispositions_recorded") is not True:
             errors.append("review_dispositions_recorded must be true")
         if data.get("remote_checks_reported") is not True:

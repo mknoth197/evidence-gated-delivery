@@ -177,9 +177,12 @@ Workers implement only their bounded lane. The orchestrator integrates coupled b
 
 Fresh and read-only.
 In encrypted Desktop collaboration runtimes, use
-`phase_transition_judge_<predecessor>_to_<successor>` as the exact persisted task name and record
+`test_coverage_reviewer` as the exact persisted task name and record
 `receipt_kind: collaboration_delegated` plus `agent_path`; validation binds the parent spawn,
-child UUID, callback, timestamps, and task-name marker.
+child UUID, callback, timestamps, exact callback SHA-256, and task-name marker. The manifest
+`result` must equal the authenticated callback, and `started_at`/`completed_at` must equal the
+authenticated delegation and child-completion timestamps. A transition-judge task name, generic
+review task name, self-attestation, or UUID-only receipt cannot satisfy this role.
 
 Inputs:
 

@@ -22,6 +22,55 @@ Readback = Callable[[], dict[str, Any]]
 Guard = Callable[[], list[str]]
 Recorder = Callable[[dict[str, Any]], None]
 LiveEvidence = Callable[[], dict[str, Any]]
+_MISSING = object()
+
+
+def _recorded_at() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _sanitize_evidence(value: Any) -> Any:
+    """Return bounded JSON-compatible evidence with sensitive strings redacted."""
+
+    if isinstance(value, dict):
+        return {
+            str(key): _sanitize_evidence(nested)
+            for key, nested in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_evidence(nested) for nested in value]
+    if isinstance(value, str):
+        return "[REDACTED]" if privacy_violations(value) else value
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return f"<{type(value).__name__}>"
+
+
+def _blocked_record(
+    action: dict[str, Any],
+    *,
+    reason: str,
+    mutation_result: Any = None,
+    readback_state: Any = _MISSING,
+    error: BaseException | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "reason": reason,
+        "mutation": _sanitize_evidence(mutation_result),
+    }
+    if readback_state is not _MISSING:
+        result["readback"] = _sanitize_evidence(readback_state)
+    if error is not None:
+        result["error"] = {
+            "type": type(error).__name__,
+            "message": _sanitize_evidence(str(error)),
+        }
+    return {
+        **action,
+        "status": "blocked",
+        "result": result,
+        "recorded_at": _recorded_at(),
+    }
 
 
 def planned_actions(
@@ -120,48 +169,76 @@ def execute_transaction(
         attempted = {
             **action,
             "status": "attempted",
-            "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "recorded_at": _recorded_at(),
         }
         records.append(attempted)
         recorder(attempted)
         try:
             result = runner(action)
         except BaseException as exc:
-            blocked = {
-                **action,
-                "status": "blocked",
-                "result": {"error": type(exc).__name__, "message": str(exc)},
-                "recorded_at": datetime.now(timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z"),
-            }
+            blocked = _blocked_record(
+                action,
+                reason="mutation_exception",
+                error=exc,
+            )
             records.append(blocked)
             recorder(blocked)
             raise PlanProtocolError(
                 f"graph mutation raised after durable attempt: {action}"
             ) from exc
         if not isinstance(result, dict) or not result.get("ok"):
-            blocked = {
-                **action,
-                "status": "blocked",
-                "result": result,
-                "recorded_at": datetime.now(timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z"),
-            }
+            blocked = _blocked_record(
+                action,
+                reason="mutation_rejected",
+                mutation_result=result,
+            )
             records.append(blocked)
             recorder(blocked)
             raise PlanProtocolError(f"graph mutation failed after attempt: {action}")
-        current = readback()
-        if action in planned_actions(draft, current):
+        try:
+            current = readback()
+        except BaseException as exc:
+            blocked = _blocked_record(
+                action,
+                reason="readback_exception",
+                mutation_result=result,
+                error=exc,
+            )
+            records.append(blocked)
+            recorder(blocked)
+            raise PlanProtocolError(
+                f"graph mutation readback raised after successful write: {action}"
+            ) from exc
+        try:
+            remaining = planned_actions(draft, current)
+        except BaseException as exc:
+            blocked = _blocked_record(
+                action,
+                reason="readback_invalid",
+                mutation_result=result,
+                readback_state=current,
+                error=exc,
+            )
+            records.append(blocked)
+            recorder(blocked)
+            raise PlanProtocolError(
+                f"graph mutation readback was invalid after successful write: {action}"
+            ) from exc
+        if action in remaining:
+            blocked = _blocked_record(
+                action,
+                reason="readback_unverified",
+                mutation_result=result,
+                readback_state=current,
+            )
+            records.append(blocked)
+            recorder(blocked)
             raise PlanProtocolError(f"graph mutation lacks verified readback: {action}")
         verified = {
             **action,
             "status": "verified",
-            "result": result,
-            "recorded_at": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "result": _sanitize_evidence(result),
+            "recorded_at": _recorded_at(),
         }
         records.append(verified)
         recorder(verified)

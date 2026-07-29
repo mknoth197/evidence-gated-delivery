@@ -1,4 +1,5 @@
 import copy
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -194,6 +195,104 @@ class GraphTransactionTests(unittest.TestCase):
         self.assertEqual(
             [record["status"] for record in durable], ["attempted", "blocked"]
         )
+
+    def test_successful_mutation_with_stale_readback_records_blocked_evidence(self):
+        state = {"children": [], "edges": []}
+        durable = []
+
+        with self.assertRaisesRegex(
+            protocol.PlanProtocolError, "lacks verified readback"
+        ):
+            transaction.execute_transaction(
+                self.draft,
+                state,
+                guard=lambda: [],
+                runner=lambda _action: {
+                    "ok": True,
+                    "mutation_id": "safe-id",
+                    "detail": "ghp_abcdefghijklmnopqrstuvwxyz123456",
+                },
+                readback=lambda: copy.deepcopy(state),
+                recorder=lambda record: durable.append(copy.deepcopy(record)),
+            )
+
+        self.assertEqual(
+            [record["status"] for record in durable], ["attempted", "blocked"]
+        )
+        blocked = durable[-1]
+        self.assertEqual(blocked["result"]["reason"], "readback_unverified")
+        self.assertEqual(blocked["result"]["mutation"]["mutation_id"], "safe-id")
+        self.assertEqual(blocked["result"]["mutation"]["detail"], "[REDACTED]")
+        self.assertEqual(blocked["result"]["readback"], state)
+        self.assertNotIn("ghp_", json.dumps(blocked))
+
+    def test_successful_mutation_with_readback_exception_records_blocked_evidence(self):
+        state = {"children": [], "edges": []}
+        durable = []
+        read_count = 0
+
+        def readback():
+            nonlocal read_count
+            read_count += 1
+            if read_count == 1:
+                return copy.deepcopy(state)
+            raise RuntimeError(
+                "readback failed with ghp_abcdefghijklmnopqrstuvwxyz123456"
+            )
+
+        with self.assertRaisesRegex(
+            protocol.PlanProtocolError, "readback raised after successful write"
+        ):
+            transaction.execute_transaction(
+                self.draft,
+                state,
+                guard=lambda: [],
+                runner=lambda _action: {"ok": True, "mutation_id": "safe-id"},
+                readback=readback,
+                recorder=lambda record: durable.append(copy.deepcopy(record)),
+            )
+
+        self.assertEqual(
+            [record["status"] for record in durable], ["attempted", "blocked"]
+        )
+        blocked = durable[-1]
+        self.assertEqual(blocked["result"]["reason"], "readback_exception")
+        self.assertEqual(blocked["result"]["mutation"]["mutation_id"], "safe-id")
+        self.assertEqual(
+            blocked["result"]["error"],
+            {"type": "RuntimeError", "message": "[REDACTED]"},
+        )
+        self.assertNotIn("ghp_", json.dumps(blocked))
+
+    def test_successful_mutation_with_missing_readback_records_returned_value(self):
+        state = {"children": [], "edges": []}
+        durable = []
+        read_count = 0
+
+        def readback():
+            nonlocal read_count
+            read_count += 1
+            return copy.deepcopy(state) if read_count == 1 else None
+
+        with self.assertRaisesRegex(
+            protocol.PlanProtocolError, "readback was invalid after successful write"
+        ):
+            transaction.execute_transaction(
+                self.draft,
+                state,
+                guard=lambda: [],
+                runner=lambda _action: {"ok": True, "mutation_id": "safe-id"},
+                readback=readback,
+                recorder=lambda record: durable.append(copy.deepcopy(record)),
+            )
+
+        self.assertEqual(
+            [record["status"] for record in durable], ["attempted", "blocked"]
+        )
+        blocked = durable[-1]
+        self.assertEqual(blocked["result"]["reason"], "readback_invalid")
+        self.assertIsNone(blocked["result"]["readback"])
+        self.assertEqual(blocked["result"]["error"]["type"], "PlanProtocolError")
 
     def test_live_guard_refreshes_identity_every_time(self):
         capability = {

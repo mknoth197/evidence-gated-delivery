@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,7 +19,14 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
     agent_path = "/root/plan_audit"
     result = "PASS plan evidence-id-1"
 
-    def write_sessions(self, root: Path, callback: str | None = None) -> None:
+    def write_sessions(
+        self,
+        root: Path,
+        callback: str | None = None,
+        *,
+        task_name: str = "plan_execution_audit",
+        message: str = "Execution auditor phase: plan\nAudit the evidence.",
+    ) -> None:
         directory = root / "sessions" / "2026" / "07" / "29"
         directory.mkdir(parents=True)
         child = [
@@ -70,8 +78,8 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                     "call_id": call_id,
                     "arguments": json.dumps(
                         {
-                            "task_name": "plan_execution_audit",
-                            "message": "Execution auditor phase: plan\nAudit the evidence.",
+                            "task_name": task_name,
+                            "message": message,
                         }
                     ),
                 },
@@ -211,6 +219,68 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
             )
         )
 
+    def reviewer(self) -> dict[str, object]:
+        return {
+            "receipt_kind": "collaboration_delegated",
+            "agent_id": self.agent_id,
+            "agent_path": self.agent_path,
+            "status": "completed",
+            "result": self.result,
+            "result_sha256": hashlib.sha256(self.result.encode()).hexdigest(),
+            "started_at": "2026-07-29T12:05:00Z",
+            "completed_at": "2026-07-29T12:10:00Z",
+        }
+
+    def test_authenticates_encrypted_test_coverage_reviewer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.write_sessions(
+                Path(temporary),
+                task_name="test_coverage_reviewer",
+                message="gAAAAABencrypted",
+            )
+            errors: list[str] = []
+            with patch.dict(os.environ, {"CODEX_HOME": temporary}):
+                reviewer_id = validator.validate_reviewer(
+                    {"parent_thread_id": self.parent_id},
+                    self.reviewer(),
+                    "test_reviewer",
+                    errors,
+                    expected_marker="Test-Coverage Reviewer",
+                )
+        self.assertEqual(reviewer_id, self.agent_id)
+        self.assertEqual(errors, [])
+
+    def test_rejects_transition_marker_for_test_coverage_reviewer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.write_sessions(
+                Path(temporary),
+                task_name="phase_transition_judge_implement_to_review",
+                message="gAAAAABencrypted",
+            )
+            errors: list[str] = []
+            with patch.dict(os.environ, {"CODEX_HOME": temporary}):
+                validator.validate_reviewer(
+                    {"parent_thread_id": self.parent_id},
+                    self.reviewer(),
+                    "test_reviewer",
+                    errors,
+                    expected_marker="Test-Coverage Reviewer",
+                )
+        self.assertTrue(any("required role marker" in error for error in errors))
+
+    def test_rejects_unauthenticated_test_coverage_receipt(self):
+        errors: list[str] = []
+        receipt = self.reviewer()
+        receipt.pop("receipt_kind")
+        validator.validate_reviewer(
+            {"parent_thread_id": self.parent_id},
+            receipt,
+            "test_reviewer",
+            errors,
+            expected_marker="Test-Coverage Reviewer",
+        )
+        self.assertTrue(any("collaboration_delegated" in error for error in errors))
+
 
 class PlanProtocolValidatorIntegrationTests(unittest.TestCase):
     body = """# Plan
@@ -308,6 +378,67 @@ No UI.
             skip_remote=True,
         )
         self.assertEqual(errors, [])
+
+    def test_hash_chained_v2_initialization_cannot_be_downgraded_to_v1(self):
+        manifest = self.manifest()
+        manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            errors,
+            skip_remote=True,
+        )
+        self.assertTrue(any("cannot downgrade" in error for error in errors), errors)
+
+    def test_v2_workflow_cannot_hide_downgrade_by_deleting_events(self):
+        manifest = self.manifest()
+        manifest["workflow_version"] = "evidence-gated-delivery/plan-protocol-v2"
+        manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        manifest.pop("plan_events")
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            errors,
+            skip_remote=True,
+        )
+        self.assertTrue(any("cannot downgrade" in error for error in errors), errors)
+
+    def test_hash_chained_v2_migration_cannot_be_downgraded_to_v1(self):
+        manifest: dict[str, object] = {
+            "plan_protocol_version": plan_protocol.PLAN_PROTOCOL_V1,
+            "plan_events": [],
+        }
+        plan_protocol.migrate_manifest_to_v2(
+            manifest,
+            recorded_at="2026-07-29T12:00:00Z",
+            event_id="019f0000-0000-7000-8000-000000000199",
+        )
+        manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            errors,
+            skip_remote=True,
+        )
+        self.assertTrue(any("cannot downgrade" in error for error in errors), errors)
+
+    def test_v1_with_tampered_event_chain_fails_closed(self):
+        manifest = self.manifest()
+        manifest["plan_protocol_version"] = plan_protocol.PLAN_PROTOCOL_V1
+        manifest["plan_events"][0]["payload"]["plan_protocol_version"] = (
+            plan_protocol.PLAN_PROTOCOL_V1
+        )
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest,
+            self.body,
+            errors,
+            skip_remote=True,
+        )
+        self.assertTrue(any("event_sha256" in error for error in errors), errors)
 
     def test_post_activation_manifest_cannot_omit_protocol_version(self):
         errors: list[str] = []
@@ -422,6 +553,83 @@ class ReviewValidatorTests(unittest.TestCase):
             any("actual-diff binding" in error for error in errors),
             errors,
         )
+
+    def make_repo(self, root: Path) -> tuple[str, str]:
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "review@example.invalid"],
+            cwd=root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Review Test"],
+            cwd=root,
+            check=True,
+        )
+        (root / "base.txt").write_text("base\n")
+        subprocess.run(["git", "add", "base.txt"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (root / "changed.txt").write_text("changed\n")
+        subprocess.run(["git", "add", "changed.txt"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "head"], cwd=root, check=True)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        return base, head
+
+    def test_changed_paths_bind_exact_live_pr_commits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base, head = self.make_repo(root)
+            (root / "uncommitted.txt").write_text("not in the PR\n")
+            errors: list[str] = []
+            with patch.object(
+                validator,
+                "github_pr_oids",
+                return_value=({"base_oid": base, "head_oid": head}, None),
+            ):
+                paths = validator.review_changed_paths(
+                    {
+                        "repo_root": str(root),
+                        "starting_commit": base,
+                        "pull_request_url": "https://github.com/o/r/pull/1",
+                    },
+                    errors,
+                )
+        self.assertEqual(errors, [])
+        self.assertEqual(paths, ["changed.txt"])
+
+    def test_changed_paths_fail_closed_on_pr_base_or_head_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base, head = self.make_repo(root)
+            errors: list[str] = []
+            with patch.object(
+                validator,
+                "github_pr_oids",
+                return_value=({"base_oid": head, "head_oid": base}, None),
+            ):
+                validator.review_changed_paths(
+                    {
+                        "repo_root": str(root),
+                        "starting_commit": base,
+                        "pull_request_url": "https://github.com/o/r/pull/1",
+                    },
+                    errors,
+                )
+        self.assertTrue(any("starting_commit" in error for error in errors), errors)
+        self.assertTrue(any("local HEAD" in error for error in errors), errors)
 
 
 class TransitionJudgeSeparationTests(unittest.TestCase):
