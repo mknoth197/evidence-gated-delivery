@@ -96,7 +96,11 @@ NONVISUAL_OBJECT_HEAD = re.compile(
     r"protocols?|markers?|records?|adapters?|modules?|packages?|"
     r"dependencies|types?|fields?|commands?|jobs?|settings?|prompts?|"
     r"skills?|reliability|performance|latency|authentication|planning|"
-    r"implementation|validation|results?|outputs?)\b\s*$"
+    r"implementation|validation)\b\s*$"
+)
+NONVISUAL_OBJECT_PHRASE = re.compile(
+    r"^\s*(?:validation|validator|test|command|api)\s+"
+    r"(?:results?|outputs?|responses?)\s*$"
 )
 
 
@@ -294,15 +298,17 @@ def _intent_group(text: str) -> str:
         r"(?:^\s*(?:create|design|generate|produce|render|draw|illustrate|"
         r"photograph|build|make|craft|compose|fashion|forge|fabricate|"
         r"construct|prepare|provide|deliver|publish|emit)|"
-        r"\bshall\s+(?:provide|deliver|publish|emit|display|show|create|render|"
-        r"export|return))"
+        r"\bshall\s+[a-z][a-z-]*)"
         r"\s+(?:(?:an?|the|new|requested)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
     )
     if creation:
         created_object = creation.group("object").strip()
-        if not NONVISUAL_OBJECT_HEAD.search(created_object):
+        if not (
+            NONVISUAL_OBJECT_HEAD.search(created_object)
+            or NONVISUAL_OBJECT_PHRASE.fullmatch(created_object)
+        ):
             return "ambiguous"
     leading_action = re.match(
         r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the)\s+)?"
@@ -311,7 +317,10 @@ def _intent_group(text: str) -> str:
     )
     if leading_action:
         object_phrase = leading_action.group("object").strip()
-        if not NONVISUAL_OBJECT_HEAD.search(object_phrase):
+        if not (
+            NONVISUAL_OBJECT_HEAD.search(object_phrase)
+            or NONVISUAL_OBJECT_PHRASE.fullmatch(object_phrase)
+        ):
             return "ambiguous"
     if re.search(
         r"\b(visual[- ]applicability|evidence[_ -]mode|generative_mockup|"

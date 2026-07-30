@@ -1028,12 +1028,16 @@ Create a {deliverable} while recording visual-applicability.
     def test_ambiguous_acceptance_criterion_cannot_become_nonvisual(self):
         for verb in (
             "provide",
+            "generate",
+            "produce",
             "display",
             "show",
             "create",
             "render",
             "export",
             "return",
+            "present",
+            "expose",
         ):
             with self.subTest(verb=verb):
                 body = f"""# Plan
@@ -1058,6 +1062,39 @@ Update a validator workflow.
                     inventory["acceptance_criteria"][0]["kind"],
                     "ambiguous_visual_intent",
                 )
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertEqual(receipt["decision"], visual.BLOCKED_DECISION)
+
+    def test_generic_output_head_cannot_prove_nonvisual_scope(self):
+        for deliverable in (
+            "launch badge output",
+            "visual output",
+            "launch badge result",
+        ):
+            with self.subTest(deliverable=deliverable):
+                body = f"""# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Create {deliverable}.
+
+## Tasks
+- [ ] **T-001 — Create {deliverable}.** Objective: create the requested artifact. Context: launch. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL render {deliverable}. <!-- AC-001 -->
+"""
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the visual policy."]
+                )
+                self.assertEqual(errors, [])
                 receipt = visual.evaluate_visual_applicability(
                     inventory,
                     phase="plan",

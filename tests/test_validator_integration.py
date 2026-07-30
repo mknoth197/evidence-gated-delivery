@@ -844,6 +844,20 @@ class RemoteGraphReadbackTests(unittest.TestCase):
 
 
 class ReviewValidatorTests(unittest.TestCase):
+    def test_malformed_timeline_returns_invalid_instead_of_raising(self):
+        errors = validator.validate(
+            {
+                "mode": "review",
+                "run_started_at": "2026-07-29T12:00:00Z",
+                "phase_timeline": [],
+            },
+            "review",
+            skip_remote=True,
+        )
+        self.assertTrue(
+            any("phase_timeline must be an object" in error for error in errors)
+        )
+
     def test_full_review_validator_fails_when_repo_evidence_is_missing(self):
         errors = validator.validate(
             {

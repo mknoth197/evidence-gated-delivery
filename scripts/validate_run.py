@@ -889,6 +889,8 @@ def validate(data: dict[str, Any], phase: str, skip_remote: bool) -> list[str]:
     if data.get("mode") not in MODE_BY_PHASE[phase]:
         errors.append(f"mode {data.get('mode')!r} cannot validate phase {phase}")
     validate_timeline(data, phase, errors)
+    if not isinstance(data.get("phase_timeline"), dict):
+        return errors
     validate_trace_audit(data, phase, errors)
 
     if phase == "research":
