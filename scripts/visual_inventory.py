@@ -20,36 +20,92 @@ from visual_core import (
     runtime_evidence_sufficient,
 )
 
-NONVISUAL_POLICY_TASK_OBJECTIVES = {
-    "implement stable task parsing and graph-policy/v1": (
-        "deterministically parse task count, explicit dependency edges, and owner lanes "
-        "from the authoritative issue"
-    ),
-    "bundle collision-safe plan-to-graph": (
-        "draft and execute the protected github graph transaction"
-    ),
-    "implement visual-applicability/v1": (
-        "prevent imagegen, screenshot, publication, and visual-review work when the "
-        "scoped deliverable does not need that evidence"
-    ),
+NONVISUAL_POLICY_TASKS = {
+    "implement stable task parsing and graph-policy/v1": {
+        "objective": (
+            "deterministically parse task count, explicit dependency edges, and "
+            "owner lanes from the authoritative issue"
+        ),
+        "context": "no agent-selected no-graph escape hatch",
+        "requirements": (
+            "unique `t-nnn`, existing dependency targets, acyclic graph, exact "
+            "boundary rule"
+        ),
+        "verification": "boundary, malformed, duplicate, missing-target, and cycle tests",
+        "complete_when": "the validator independently recomputes the disposition",
+    },
+    "bundle collision-safe plan-to-graph": {
+        "objective": "draft and execute the protected github graph transaction",
+        "context": "implementation issue is parent; mutation requires exact-draft authorization",
+        "requirements": (
+            "read-only identity/repository/capability preflight, authorization "
+            "binding, collision scan, exact-subset recovery, full child body "
+            "preservation, immediate action ledger, native parent and blocked-by "
+            "links, source-provenance and license decision"
+        ),
+        "verification": (
+            "wrong-account/repository, missing-capability, identity-drift, "
+            "authorization-hash, collision, exact-subset, mocked github command, "
+            "notice, and serialization tests"
+        ),
+        "complete_when": "no write path is reachable without a current exact authorization binding",
+    },
+    "implement visual-applicability/v1": {
+        "objective": (
+            "prevent imagegen, screenshot, publication, and visual-review work when "
+            "the scoped deliverable does not need that evidence"
+        ),
+        "context": (
+            "visual generation is expensive and currently unconditional, while "
+            "some existing-ui changes need runtime evidence but not generation"
+        ),
+        "requirements": (
+            "final required/not-applicable disposition; `none`, `runtime_capture`, "
+            "and `generative_mockup` evidence modes; authority/scope/source-order "
+            "normalization of user direction; complete hash-bound deliverable/"
+            "direction/criterion/task/module/path inventory with exact-set coverage; "
+            "positive nonvisual coverage; phase-bound recomputation; unrelated-"
+            "frontend rejection; prose/table/mermaid default for nonvisual "
+            "documentation; empty visual receipts on mode none; runtime-only "
+            "evidence on runtime_capture; and preservation of all existing imagegen "
+            "gates only on generative_mockup"
+        ),
+        "verification": (
+            "backend-only, cli, validator/workflow docs, mixed monorepo, omitted/"
+            "duplicate/unclassified criterion or task module, masked or unknown "
+            "path, frontend-affecting api contract, generated web asset, ui copy, "
+            "aria-only, css regression, existing state bug, new screen/layout, "
+            "redesign, marketing asset, older-opt-in/newer-opt-out, older-opt-out/"
+            "newer-opt-in, same-turn conflict, opt-out versus acceptance-critical "
+            "evidence, material/nonmaterial ambiguity, stale receipt replay, "
+            "planned-backend/actual-frontend drift, scope-hash tampering, and forged "
+            "repository-signal fixtures"
+        ),
+        "complete_when": (
+            "the validator deterministically recomputes the same phase-bound mode "
+            "and no imagegen call is required for this repository-only workflow "
+            "initiative"
+        ),
+    },
 }
-VISUAL_OUTPUT_ACTION = re.compile(
-    r"\b(?:assemble|create|deliver|design|display|draw|expose|generate|illustrate|"
-    r"make|present|produce|provide|publish|render|show)\b",
-    re.IGNORECASE,
-)
 
 
 def _canonical_policy_task_is_nonvisual(record: dict[str, Any]) -> bool:
     title = str(record.get("title", "")).strip().lower()
-    objective = str(record.get("objective", "")).strip().lower()
-    if NONVISUAL_POLICY_TASK_OBJECTIVES.get(title) != objective:
+    expected = NONVISUAL_POLICY_TASKS.get(title)
+    if expected is None:
         return False
-    remaining = " ".join(
-        str(record.get(field, ""))
-        for field in ("context", "requirements", "verification", "complete_when")
-    )
-    return VISUAL_OUTPUT_ACTION.search(remaining) is None
+    actual = {
+        field: str(record.get(field, "")).strip().lower()
+        for field in (
+            "objective",
+            "context",
+            "requirements",
+            "verification",
+            "complete_when",
+        )
+    }
+    return actual == expected
 
 
 def extract_scope_inventory(

@@ -493,6 +493,49 @@ Implement a workflow policy.
                 self.assertNotEqual(receipt["decision"], "VISUAL_NOT_APPLICABLE")
                 self.assertNotEqual(receipt["evidence_mode"], "none")
 
+    def test_policy_task_exemption_requires_every_canonical_field(self):
+        fixture = (
+            Path(__file__).parent / "fixtures" / "hi_fi_planning_issue_2.md"
+        ).read_text(encoding="utf-8")
+        mutations = (
+            (
+                "Context: no agent-selected no-graph escape hatch.",
+                "Context: hero image launch asset.",
+            ),
+            (
+                "Requirements: unique `T-NNN`, existing dependency targets, acyclic graph, exact boundary rule.",
+                "Requirements: include a mood board.",
+            ),
+            (
+                "Requirements: unique `T-NNN`, existing dependency targets, acyclic graph, exact boundary rule.",
+                "Requirements: require a screenshot.",
+            ),
+            (
+                "Verification: boundary, malformed, duplicate, missing-target, and cycle tests.",
+                "Verification: inspect a commemorative plaque.",
+            ),
+            (
+                "Complete when the validator independently recomputes the disposition.",
+                "Complete when the visual report is approved.",
+            ),
+        )
+        for original, replacement in mutations:
+            with self.subTest(replacement=replacement):
+                self.assertIn(original, fixture)
+                body = fixture.replace(original, replacement, 1)
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the visual policy."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertNotEqual(receipt["decision"], "VISUAL_NOT_APPLICABLE")
+                self.assertNotEqual(receipt["evidence_mode"], "none")
+
     def test_broader_visual_deliverables_cannot_fall_through_to_nonvisual(self):
         for deliverable, path in (
             ("product illustration", "assets/product-illustration.svg"),
