@@ -114,16 +114,16 @@ def realtime_delegated_audit_evidence(
 def collaboration_delegated_audit_evidence(
     data: dict[str, Any], audit: dict[str, Any], *, session_reader=agent_session_evidence
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Authenticate Desktop collaboration evidence across parent and child traces."""
-    parent_id = data.get("parent_thread_id")
+    """Authenticate Desktop collaboration evidence across a UUID-backed ancestry chain."""
+    root_parent_id = data.get("parent_thread_id")
     agent_id = audit.get("agent_id")
     agent_path = audit.get("agent_path")
-    if not nonempty(parent_id) or not nonempty(agent_id) or not nonempty(agent_path):
+    if not nonempty(root_parent_id) or not nonempty(agent_id) or not nonempty(agent_path):
         return None, "collaboration audit needs parent_thread_id, agent_id, and agent_path"
     if not AGENT_ID_RE.fullmatch(agent_id.strip()):
         return None, "collaboration auditor must use a UUID agent_id"
-    if not re.fullmatch(r"/[a-z0-9_]+/[a-z0-9_]+", agent_path.strip()):
-        return None, "collaboration auditor must use a depth-one agent_path"
+    if not re.fullmatch(r"(?:/[a-z0-9_]+){2,}", agent_path.strip()):
+        return None, "collaboration auditor must use a canonical descendant agent_path"
 
     child, child_error = session_reader(agent_id.strip())
     if child_error:
@@ -131,17 +131,53 @@ def collaboration_delegated_audit_evidence(
     assert child is not None
     child_meta = child["session_meta"]
     spawn_meta = child_meta.get("source", {}).get("subagent", {}).get("thread_spawn", {})
-    if child_meta.get("thread_source") != "subagent" or spawn_meta.get("depth") != 1:
-        return None, "collaboration auditor child must be a depth-one Codex subagent"
-    if spawn_meta.get("parent_thread_id") != parent_id:
-        return None, "collaboration auditor child does not belong to the current parent thread"
+    expected_depth = len([part for part in agent_path.strip().split("/") if part]) - 1
+    if (
+        child_meta.get("thread_source") != "subagent"
+        or spawn_meta.get("depth") != expected_depth
+    ):
+        return None, "collaboration auditor child depth does not match its agent_path"
     if spawn_meta.get("agent_path") != agent_path:
         return None, "collaboration auditor child agent_path mismatch"
+    delegation_parent_id = spawn_meta.get("parent_thread_id")
+    if not nonempty(delegation_parent_id):
+        return None, "collaboration auditor child lacks an immediate parent thread"
+
+    expected_parent_path = agent_path.strip().rsplit("/", 1)[0]
+    ancestor_id = delegation_parent_id
+    ancestor_path = expected_parent_path
+    visited = {agent_id.strip()}
+    while ancestor_id != root_parent_id:
+        if ancestor_id in visited or not AGENT_ID_RE.fullmatch(str(ancestor_id)):
+            return None, "collaboration auditor ancestry is cyclic or malformed"
+        visited.add(ancestor_id)
+        ancestor, ancestor_error = session_reader(ancestor_id)
+        if ancestor_error:
+            return None, f"collaboration auditor ancestry verification failed: {ancestor_error}"
+        assert ancestor is not None
+        ancestor_meta = ancestor["session_meta"]
+        ancestor_spawn = (
+            ancestor_meta.get("source", {}).get("subagent", {}).get("thread_spawn", {})
+        )
+        if (
+            ancestor_meta.get("thread_source") != "subagent"
+            or ancestor_spawn.get("agent_path") != ancestor_path
+        ):
+            return None, "collaboration auditor ancestry path mismatch"
+        ancestor_id = ancestor_spawn.get("parent_thread_id")
+        ancestor_path = ancestor_path.rsplit("/", 1)[0]
+        if not nonempty(ancestor_id) or not ancestor_path:
+            return None, "collaboration auditor does not descend from the run parent"
 
     codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    parent_files = list((codex_home / "sessions").rglob(f"*{parent_id}.jsonl"))
+    parent_files = list(
+        (codex_home / "sessions").rglob(f"*{delegation_parent_id}.jsonl")
+    )
     if len(parent_files) != 1:
-        return None, f"expected one parent rollout session for {parent_id}, found {len(parent_files)}"
+        return None, (
+            f"expected one immediate parent rollout session for {delegation_parent_id}, "
+            f"found {len(parent_files)}"
+        )
 
     parent_meta: dict[str, Any] | None = None
     started_at: str | None = None
@@ -152,7 +188,10 @@ def collaboration_delegated_audit_evidence(
         records = [json.loads(line) for line in parent_files[0].read_text().splitlines()]
         for item in records:
             payload = item.get("payload", {})
-            if item.get("type") == "session_meta" and payload.get("id") == parent_id:
+            if (
+                item.get("type") == "session_meta"
+                and payload.get("id") == delegation_parent_id
+            ):
                 parent_meta = payload
             if item.get("type") == "event_msg" and payload.get("type") == "sub_agent_activity":
                 if (
@@ -163,7 +202,10 @@ def collaboration_delegated_audit_evidence(
                     started_at = item.get("timestamp")
                     spawn_event_id = payload.get("event_id")
             if item.get("type") == "response_item" and payload.get("type") == "agent_message":
-                if payload.get("author") == agent_path and payload.get("recipient") == "/root":
+                if (
+                    payload.get("author") == agent_path
+                    and payload.get("recipient") == expected_parent_path
+                ):
                     text = "\n".join(
                         block.get("text", "")
                         for block in payload.get("content", [])
