@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +86,17 @@ AUTHORITY_RANK = {
     "user": 40,
     "system": 50,
 }
+NONVISUAL_OBJECT_HEAD = re.compile(
+    r"\b(?:validator|verifier|workflow|automation|tests?|fixtures?|"
+    r"documentation|readme|api|endpoint|service|functions?|methods?|"
+    r"scripts?|tools?|library|cli|backend|migration|schemas?|contracts?|"
+    r"parsers?|serializers?|manifests?|receipts?|events?|checks?|gates?|"
+    r"polic(?:y|ies)|rules?|configurations?|configs?|integrations?|logic|"
+    r"handlers?|behaviors?|states?|support|mechanisms?|capabilities?|"
+    r"protocols?|markers?|records?|adapters?|modules?|packages?|"
+    r"dependencies|types?|fields?|commands?|jobs?|settings?|prompts?|"
+    r"skills?|reliability|planning|implementation|validation)\b\s*$"
+)
 
 
 def canonical_sha256(value: Any) -> str:
@@ -248,6 +259,8 @@ def runtime_evidence_sufficient(
             continue
         if captured.tzinfo is None:
             continue
+        if captured > datetime.now(timezone.utc) + timedelta(minutes=5):
+            continue
         if threshold is not None and captured < threshold:
             continue
         return True
@@ -256,6 +269,8 @@ def runtime_evidence_sufficient(
 
 def _intent_group(text: str) -> str:
     lowered = text.lower()
+    if not lowered.strip():
+        return "nonvisual"
     inferred = _inferred_kind_group({"source": text})
     if inferred in {"generative", "runtime"}:
         return inferred
@@ -273,18 +288,16 @@ def _intent_group(text: str) -> str:
     )
     if creation:
         created_object = creation.group("object").strip()
-        if not re.search(
-            r"\b(?:validator|verifier|workflow|automation|tests?|fixtures?|"
-            r"documentation|readme|api|endpoint|service|functions?|methods?|"
-            r"scripts?|tools?|library|cli|backend|migration|schemas?|contracts?|"
-            r"parsers?|serializers?|manifests?|receipts?|events?|checks?|gates?|"
-            r"polic(?:y|ies)|rules?|configurations?|configs?|integrations?|logic|"
-            r"handlers?|behaviors?|states?|support|mechanisms?|capabilities?|"
-            r"protocols?|markers?|records?|adapters?|modules?|packages?|"
-            r"dependencies|types?|fields?|commands?|jobs?|settings?|"
-            r"prompts?|skills?)\b\s*$",
-            created_object,
-        ):
+        if not NONVISUAL_OBJECT_HEAD.search(created_object):
+            return "ambiguous"
+    leading_action = re.match(
+        r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the|new|existing|requested)\s+)?"
+        r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
+        intent_clause,
+    )
+    if leading_action:
+        object_phrase = leading_action.group("object").strip()
+        if not NONVISUAL_OBJECT_HEAD.search(object_phrase):
             return "ambiguous"
     if re.search(
         r"\b(visual[- ]applicability|evidence[_ -]mode|generative_mockup|"
@@ -292,7 +305,7 @@ def _intent_group(text: str) -> str:
         lowered,
     ):
         return "nonvisual"
-    return inferred or "nonvisual"
+    return inferred or "ambiguous"
 
 
 def _direction_entry(identifier: str, source: str, order: int) -> dict[str, Any]:

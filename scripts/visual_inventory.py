@@ -244,8 +244,6 @@ def extract_scope_inventory(
             kind = "new_visual_concept"
         elif source_group == "runtime":
             kind = "existing_component_state"
-        elif source_group == "ambiguous":
-            kind = "ambiguous_visual_intent"
         acceptance_entries.append(
             {
                 "id": value,

@@ -173,7 +173,7 @@ nonvisual coverage, exact authoritative deliverable binding, and empty image rec
 an allowed capture kind, timezone-aware capture timestamp, bounded evidence text, a readable absolute local
 artifact path, and a lowercase SHA-256 matching those artifact bytes. Sufficiency defaults false
 and is recomputed per scope entry from authoritative evidence; unreadable, digest-mismatched,
-content-type-mismatched, or stale evidence cannot satisfy the gate. Embedded sufficiency values
+content-type-mismatched, stale, or more than five minutes future-dated evidence cannot satisfy the gate. Embedded sufficiency values
 are never validation authority. Screenshot and visual-regression evidence currently requires a
 strictly parsed non-interlaced PNG with bounded compressed/decompressed size, valid critical
 chunks, CRCs, reconstructed scanlines, and indexed-color palette rules; unsupported recording

@@ -21,6 +21,7 @@ def valid_png(data: bytes) -> bool:
     saw_plte = False
     palette_entries = 0
     singleton_ancillary: set[bytes] = set()
+    color_metadata: dict[bytes, bytes] = {}
     while offset + 12 <= len(data):
         length = struct.unpack(">I", data[offset : offset + 4])[0]
         chunk_type = data[offset + 4 : offset + 8]
@@ -105,6 +106,7 @@ def valid_png(data: bytes) -> bool:
             ):
                 return False
             singleton_ancillary.add(chunk_type)
+            color_metadata[chunk_type] = payload
         elif chunk_type in {b"cHRM", b"gAMA", b"sRGB", b"pHYs", b"tIME"}:
             if chunk_type in singleton_ancillary:
                 return False
@@ -146,6 +148,8 @@ def valid_png(data: bytes) -> bool:
                     and second <= 60
                 ):
                     return False
+            if chunk_type in {b"cHRM", b"gAMA", b"sRGB"}:
+                color_metadata[chunk_type] = payload
         elif chunk_type and chunk_type[0] & 0x20 == 0:
             return False
         elif chunk_type:
@@ -170,6 +174,18 @@ def valid_png(data: bytes) -> bool:
         or (color_type == 3 and palette_entries > 2 ** int(bit_depth))
     ):
         return False
+    if b"sRGB" in color_metadata:
+        if (
+            b"gAMA" in color_metadata
+            and struct.unpack(">I", color_metadata[b"gAMA"])[0] != 45455
+        ):
+            return False
+        if (
+            b"cHRM" in color_metadata
+            and struct.unpack(">IIIIIIII", color_metadata[b"cHRM"])
+            != (31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000)
+        ):
+            return False
     row_bytes = (int(width) * channels * int(bit_depth) + 7) // 8
     expected_size = int(height) * (row_bytes + 1)
     if expected_size > 100 * 1024 * 1024:

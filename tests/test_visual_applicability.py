@@ -727,6 +727,24 @@ Adjust an existing component state.
                         extra_chunks=((b"tEXt", b" bad  key\0text"),)
                     ),
                 ),
+                (
+                    "inconsistent-gamma.png",
+                    png_bytes(
+                        extra_chunks=(
+                            (b"sRGB", b"\x00"),
+                            (b"gAMA", struct.pack(">I", 1)),
+                        )
+                    ),
+                ),
+                (
+                    "inconsistent-chromaticity.png",
+                    png_bytes(
+                        extra_chunks=(
+                            (b"sRGB", b"\x00"),
+                            (b"cHRM", b"\x00" * 32),
+                        )
+                    ),
+                ),
             ):
                 invalid_png = Path(directory) / name
                 invalid_png.write_bytes(content)
@@ -754,6 +772,10 @@ Adjust an existing component state.
                     [naive],
                     not_before="2026-07-29T11:00:00Z",
                 )
+            )
+            future = dict(valid, captured_at="2099-01-01T00:00:00Z")
+            self.assertFalse(
+                visual.runtime_evidence_sufficient("T-001", [future])
             )
             self.assertFalse(
                 visual.runtime_evidence_sufficient(
@@ -876,8 +898,18 @@ Create a {deliverable} while recording visual-applicability.
             "launch badge for API documentation",
             "commemorative plaque",
             "award medallion",
+            "webinar slide template",
+            "mood board",
         ):
-            for verb in ("Create", "Build", "Make", "Craft"):
+            for verb in (
+                "Create",
+                "Build",
+                "Make",
+                "Craft",
+                "Develop",
+                "Draft",
+                "Assemble",
+            ):
                 with self.subTest(deliverable=deliverable, verb=verb):
                     body = f"""# Plan
 
