@@ -177,7 +177,7 @@ content-type-mismatched, or stale evidence cannot satisfy the gate. Embedded suf
 are never validation authority. Screenshot and visual-regression evidence currently requires a
 strictly parsed non-interlaced PNG with bounded compressed/decompressed size, valid critical
 chunks, CRCs, reconstructed scanlines, and indexed-color palette rules; unsupported recording
-containers fail closed.
+containers and unvalidated ancillary PNG chunks fail closed.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

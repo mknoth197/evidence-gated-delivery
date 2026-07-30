@@ -687,6 +687,29 @@ Adjust an existing component state.
                     "bad-chunk-name.png",
                     png_bytes(extra_chunks=((b"ab1d", b""),)),
                 ),
+                (
+                    "transparency-before-palette.png",
+                    png_bytes(
+                        b"\x00\x00",
+                        color_type=3,
+                        extra_chunks=(
+                            (b"tRNS", b"\xff"),
+                            (b"PLTE", b"\x00\x00\x00"),
+                        ),
+                    ),
+                ),
+                (
+                    "duplicate-transparency.png",
+                    png_bytes(
+                        b"\x00\x00",
+                        color_type=3,
+                        extra_chunks=(
+                            (b"PLTE", b"\x00\x00\x00"),
+                            (b"tRNS", b"\xff"),
+                            (b"tRNS", b"\xff"),
+                        ),
+                    ),
+                ),
             ):
                 invalid_png = Path(directory) / name
                 invalid_png.write_bytes(content)
@@ -790,6 +813,10 @@ Create a marketing asset and hero image while recording visual-applicability.
             ("infographic", "scripts/generate_asset.py"),
             ("technical diagram", "scripts/generate_asset.py"),
             ("emoji pack", "scripts/generate_asset.py"),
+            ("HTML email template", "scripts/generate_asset.py"),
+            ("presentation template", "scripts/generate_asset.py"),
+            ("printed certificate template", "scripts/generate_asset.py"),
+            ("event invitation template", "scripts/generate_asset.py"),
         ):
             with self.subTest(deliverable=deliverable):
                 body = f"""# Plan
