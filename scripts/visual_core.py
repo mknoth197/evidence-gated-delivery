@@ -102,6 +102,21 @@ NONVISUAL_OBJECT_PHRASE = re.compile(
     r"^\s*(?:validation|validator|test|command|api)\s+"
     r"(?:results?|outputs?|responses?)\s*$"
 )
+NONVISUAL_OBJECT_PHRASE_VERBS = frozenset(
+    {
+        "check",
+        "compare",
+        "emit",
+        "inspect",
+        "parse",
+        "record",
+        "return",
+        "serialize",
+        "store",
+        "validate",
+        "verify",
+    }
+)
 
 
 def canonical_sha256(value: Any) -> str:
@@ -295,31 +310,39 @@ def _intent_group(text: str) -> str:
         maxsplit=1,
     )[0]
     creation = re.search(
-        r"(?:^\s*(?:create|design|generate|produce|render|draw|illustrate|"
+        r"(?:^\s*(?P<leading_verb>create|design|generate|produce|render|draw|illustrate|"
         r"photograph|build|make|craft|compose|fashion|forge|fabricate|"
         r"construct|prepare|provide|deliver|publish|emit)|"
-        r"\bshall\s+[a-z][a-z-]*)"
+        r"\bshall\s+(?P<ears_verb>[a-z][a-z-]*))"
         r"\s+(?:(?:an?|the|new|requested)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
     )
     if creation:
+        action = creation.group("leading_verb") or creation.group("ears_verb")
         created_object = creation.group("object").strip()
         if not (
             NONVISUAL_OBJECT_HEAD.search(created_object)
-            or NONVISUAL_OBJECT_PHRASE.fullmatch(created_object)
+            or (
+                NONVISUAL_OBJECT_PHRASE.fullmatch(created_object)
+                and action in NONVISUAL_OBJECT_PHRASE_VERBS
+            )
         ):
             return "ambiguous"
     leading_action = re.match(
-        r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the)\s+)?"
+        r"^\s*(?P<action>[a-z][a-z-]*)\s+(?:(?:an?|the)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
     )
     if leading_action:
+        action = leading_action.group("action")
         object_phrase = leading_action.group("object").strip()
         if not (
             NONVISUAL_OBJECT_HEAD.search(object_phrase)
-            or NONVISUAL_OBJECT_PHRASE.fullmatch(object_phrase)
+            or (
+                NONVISUAL_OBJECT_PHRASE.fullmatch(object_phrase)
+                and action in NONVISUAL_OBJECT_PHRASE_VERBS
+            )
         ):
             return "ambiguous"
     if re.search(

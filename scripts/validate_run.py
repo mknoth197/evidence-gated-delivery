@@ -186,9 +186,12 @@ def timestamp(value: Any) -> datetime | None:
     if not nonempty(value):
         return None
     try:
-        return datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
 
 
 def validate_timeline(data: dict[str, Any], phase: str, errors: list[str]) -> None:
