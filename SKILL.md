@@ -264,7 +264,8 @@ Goal: choose and freeze what should be built.
    - `runtime_capture` for existing-UI work fully verifiable through current runtime, DOM,
      accessibility, or visual-regression evidence; or
    - `generative_mockup` for new or substantially redesigned visual concepts, inherently visual
-     deliverables, or explicit ImageGen exploration.
+     deliverables such as illustrations, icon sets, brand or marketing assets, or explicit
+     ImageGen exploration.
    An unrelated frontend does not make images applicable. Documentation expressed adequately
    through prose, tables, or Mermaid is nonvisual unless appearance is itself the deliverable.
    Incomplete or materially ambiguous scope blocks before visual work. Bind the canonical scope
@@ -345,7 +346,8 @@ Goal: choose and freeze what should be built.
 16. Read the final issue body back, bind its canonical hash, and obtain a fresh independent
     `final_remote` Plan audit for those exact bytes.
 17. Parse the stable task grammar and recompute `graph-policy/v1`. For `NO_GRAPH`, retain the
-    validator receipt. For `GRAPH_REQUIRED`, use bundled `plan-to-graph` to freeze an exact draft
+    validator receipt and reject any graph lifecycle or mutation event as contradictory evidence.
+    For `GRAPH_REQUIRED`, use bundled `plan-to-graph` to freeze an exact draft
     and stop for explicit authorization of that draft before any child-issue or relationship write.
     After authorization, publish one item at a time and verify the complete native graph remotely.
 18. Run the Plan execution auditor and validator only after all disposition, audit, task, graph,

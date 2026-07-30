@@ -120,7 +120,9 @@ def _inferred_kind_group(entry: dict[str, Any]) -> str | None:
     ).lower()
     if re.search(
         r"\b(new[ _.-]?screen|new page|new component|new visual concept|redesign|"
-        r"marketing asset|generated (?:web )?asset|landing page|hero image)\b",
+        r"marketing asset|generated (?:web )?asset|landing page|hero image|"
+        r"product illustration|illustrations?|icon set|brand asset|social card|"
+        r"poster|thumbnail)\b",
         text,
     ):
         return "generative"
@@ -131,6 +133,8 @@ def _inferred_kind_group(entry: dict[str, Any]) -> str | None:
     ):
         return "runtime"
     path = str(entry.get("path") or entry.get("source") or "").lower().strip("` ")
+    if re.search(r"\.(?:png|jpe?g|gif|webp|svg|ico|avif)$", path):
+        return "generative"
     if re.search(r"(?:^|/)(?:web|ui|frontend|mobile|desktop|components?)/", path) or re.search(
         r"\.(?:tsx|jsx|vue|svelte|css|scss|sass|less)$", path
     ):

@@ -612,6 +612,40 @@ Create a marketing asset and hero image while recording visual-applicability.
         )
         self.assertEqual(receipt["evidence_mode"], "generative_mockup")
 
+    def test_broader_visual_deliverables_cannot_fall_through_to_nonvisual(self):
+        for deliverable, path in (
+            ("product illustration", "assets/product-illustration.svg"),
+            ("icon set", "assets/product-icons.svg"),
+        ):
+            with self.subTest(deliverable=deliverable):
+                body = f"""# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-002`
+
+## Problem Statement
+Create a {deliverable} while recording visual-applicability.
+
+## Tasks
+- [ ] **T-001 — Create {deliverable}.** Objective: create a {deliverable}. Context: visual-applicability. Affected modules: `{path}`, `scripts/generate_illustration.py`. Requirements: produce the {deliverable}. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL provide the {deliverable} and record visual-applicability. <!-- AC-001 -->
+"""
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Generate the requested visual."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertEqual(
+                    receipt["evidence_mode"], "generative_mockup"
+                )
+
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan
 

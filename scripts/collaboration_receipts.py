@@ -310,9 +310,21 @@ def verify_parent_graph_authorization(
             if item.get("timestamp") != evidence.get("authorized_at"):
                 continue
             lowered = message.lower()
-            if str(draft_sha) not in message or not re.search(
-                r"\b(?:approve|authorize)\b.*\b(?:graph|draft)\b", lowered, re.DOTALL
-            ):
+            draft_token = re.escape(str(draft_sha).lower())
+            affirmative = re.search(
+                rf"(?im)^\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
+                rf"(?:approve|authorize)\s+(?:the\s+)?"
+                rf"(?:graph\s+draft|draft\s+graph|graph|draft)\b[^\n]*"
+                rf"{draft_token}\b",
+                lowered,
+            )
+            denial = re.search(
+                rf"(?is)\b(?:do\s+not|don't|not|never|deny|reject|revoke)\b"
+                rf".{{0,100}}\b(?:approve|authorize|graph|draft)\b"
+                rf".{{0,200}}{draft_token}\b",
+                lowered,
+            )
+            if not affirmative or denial:
                 continue
             matched = True
             break

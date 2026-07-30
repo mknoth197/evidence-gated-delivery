@@ -37,7 +37,9 @@ A visual disposition is derived from the complete scoped issue, acceptance crite
 affected modules, intended paths, user direction, and repository evidence. `none` requires
 positive complete nonvisual coverage; `runtime_capture` requires current, timestamped,
 artifact-bound evidence covering every runtime scope ID but no
-ImageGen; `generative_mockup` requires the complete visual tournament and publication contract.
+ImageGen; `generative_mockup` applies to new visual concepts and inherently visual deliverables
+such as illustrations, icon sets, and brand or marketing assets, and requires the complete visual
+tournament and publication contract.
 Recompute it from intended paths at Implement Orientation and the actual diff at Review.
 
 A normative visual for a user-facing change must be based on a current authenticated product capture

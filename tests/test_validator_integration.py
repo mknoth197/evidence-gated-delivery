@@ -490,6 +490,44 @@ No UI.
         self.assertTrue(any("NO_GRAPH requires graph_draft" in error for error in errors))
         self.assertTrue(any("NO_GRAPH requires graph_actions" in error for error in errors))
 
+    def test_no_graph_rejects_graph_lifecycle_events(self):
+        manifest = self.manifest()
+        plan_protocol.append_plan_event(
+            manifest["plan_events"],
+            "graph_action_recorded",
+            {"action": "create_child", "status": "verified"},
+            recorded_at="2026-07-29T12:12:00Z",
+            event_id="00000000-0000-4000-8000-000000000121",
+        )
+        audit = manifest["plan_audits"][0]
+        callback = (
+            "PASS remote-body\n"
+            + plan_protocol.plan_audit_callback_marker(audit)
+        )
+        evidence = {
+            "final_message": callback,
+            "delegation_started_at": "2026-07-29T12:05:00Z",
+            "completed_at": "2026-07-29T12:06:00Z",
+            "delegation_arguments": {
+                "message": "Independent Plan spec auditor\nAudit the remote Plan."
+            },
+        }
+        errors: list[str] = []
+        with patch.object(
+            validator,
+            "collaboration_delegated_audit_evidence",
+            return_value=(evidence, None),
+        ):
+            validator.validate_plan_protocol_evidence(
+                manifest, self.body, errors, skip_remote=True
+            )
+        self.assertTrue(
+            any(
+                "NO_GRAPH forbids graph_action_recorded" in error
+                for error in errors
+            )
+        )
+
     def test_legacy_manifest_bypasses_v2_contract(self):
         errors: list[str] = []
         validator.validate_plan_protocol_evidence(

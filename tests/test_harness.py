@@ -484,6 +484,66 @@ class AuditorAuthenticationTests(unittest.TestCase):
                     )
                 )
 
+    def test_graph_authorization_rejects_negated_or_conflicting_message(self):
+        draft_sha = "b" * 64
+        for message in (
+            f"I do not approve graph draft {draft_sha}",
+            f"Do not authorize graph draft {draft_sha}",
+            (
+                f"Authorize graph draft {draft_sha}.\n"
+                f"Actually, do not authorize graph draft {draft_sha}."
+            ),
+        ):
+            with self.subTest(message=message):
+                with tempfile.TemporaryDirectory() as directory:
+                    session_dir = (
+                        Path(directory) / "sessions" / "2026" / "07" / "23"
+                    )
+                    session_dir.mkdir(parents=True)
+                    session = (
+                        session_dir
+                        / f"rollout-{self.parent_thread_id}.jsonl"
+                    )
+                    records = [
+                        {
+                            "type": "session_meta",
+                            "payload": {"id": self.parent_thread_id},
+                        },
+                        {
+                            "type": "response_item",
+                            "timestamp": "2026-07-23T12:05:00Z",
+                            "payload": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": message}
+                                ],
+                            },
+                        },
+                    ]
+                    session.write_text(
+                        "\n".join(json.dumps(record) for record in records)
+                        + "\n"
+                    )
+                    authorization = {
+                        "authorization_evidence": {
+                            "receipt_kind": "authenticated_parent_user_message",
+                            "parent_thread_id": self.parent_thread_id,
+                            "draft_sha256": draft_sha,
+                            "message_sha256": hashlib.sha256(
+                                message.encode()
+                            ).hexdigest(),
+                            "authorized_at": "2026-07-23T12:05:00Z",
+                        }
+                    }
+                    with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                        errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                            {"parent_thread_id": self.parent_thread_id},
+                            authorization,
+                            {"draft_sha256": draft_sha},
+                        )
+                    self.assertTrue(errors)
+
 
 if __name__ == "__main__":
     unittest.main()

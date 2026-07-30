@@ -84,7 +84,8 @@ The receipt records the version, disposition, task count, edge count, owner lane
 and evaluation timestamp. Agents do not select the result.
 For `NO_GRAPH`, capability, draft, authorization, action, and remote-state evidence must all be
 empty. When remote checks are enabled, the parent issue must also have no workflow-owned child
-marker; contradictory mutation evidence fails closed.
+marker. Graph draft, authorization, action, or reconciliation events are also forbidden;
+contradictory immutable history fails closed even if mutable manifest fields were cleared.
 
 ## Plan audit
 
@@ -154,7 +155,8 @@ Authorization is valid only when it binds:
 - graph draft SHA-256, every child-body SHA-256, and every edge;
 - an authenticated parent-user-message receipt containing the parent thread ID, exact draft
   SHA-256, exact message SHA-256, and message timestamp. The parent message must explicitly
-  approve or authorize that exact graph draft hash.
+  and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected,
+  or conflicting language is not authorization.
 
 Any identity, repository, parent, capability, or draft drift invalidates authorization before a
 write. The transaction guard reauthenticates the parent approval immediately before every write.

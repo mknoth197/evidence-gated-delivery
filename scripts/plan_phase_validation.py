@@ -215,6 +215,14 @@ def validate_plan_protocol_evidence(
     if not isinstance(recorded_policy, dict) or deps.timestamp(recorded_policy.get("evaluated_at")) is None:
         errors.append("graph_policy_receipt.evaluated_at must be an ISO-8601 timestamp")
     if computed_policy["disposition"] == "NO_GRAPH":
+        forbidden_event_types = {
+            "graph_draft_frozen",
+            "graph_authorized",
+            "graph_action_recorded",
+            "graph_reconciled",
+        }
+        for event_type in sorted(event_types & forbidden_event_types):
+            errors.append(f"NO_GRAPH forbids {event_type} plan events")
         for field in (
             "graph_capability_receipt",
             "graph_draft",

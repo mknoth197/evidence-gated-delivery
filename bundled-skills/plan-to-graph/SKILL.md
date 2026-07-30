@@ -76,7 +76,8 @@ and draft SHA-256. Ask the user to explicitly authorize that exact draft.
 
 Authorization evidence is an authenticated parent-user-message receipt binding the parent thread,
 exact draft SHA-256, exact message SHA-256, and message timestamp. The message itself must explicitly
-approve or authorize that exact graph draft hash. Approval of a Plan, a previous draft, or
+and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected, or
+conflicting language fails closed. Approval of a Plan, a previous draft, or
 “continue” from before the draft was frozen is not graph authorization. Reauthenticate the receipt
 before every write. Drift invalidates authorization. Never broaden authorization to later edits or
 unknown recovery actions.
