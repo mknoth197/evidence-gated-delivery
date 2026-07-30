@@ -21,7 +21,10 @@ artifacts; manifests and checkpoint receipts are execution evidence.
   run ID, restoring legacy fields, and deleting events cannot make an activated run eligible for
   v1 validation. V2 validation requires the receipt, exact manifest/receipt identity fields, and
   the bound activation event in the hash chain. Migration `--dry-run` prepares and prints the
-  candidate without writing either the manifest or activation registry.
+  candidate without writing either the manifest or activation registry. If an interruption leaves
+  the write-once activation receipt before the manifest replacement, a retry reuses that receipt's
+  exact event ID and timestamp after verifying all stable legacy-manifest bindings; it never
+  invents conflicting activation evidence.
 
 ## Canonical issue body
 
@@ -122,9 +125,11 @@ receipt.
 
 ## Protected graph transaction
 
-A frozen graph draft records the parent issue URL, repository, exact child titles and complete
-bodies, stable markers, child-body hashes, and ordered dependency edges. Its SHA-256 covers the
-complete canonical object.
+A frozen graph draft is deterministically derived from the canonical tasks parsed from the
+authoritative implementation issue. It records the parent issue URL, repository, exact child titles
+and complete bodies, stable markers, child-body hashes, and ordered dependency edges. Its SHA-256
+covers the complete canonical object. Validation requires the supplied draft to equal that derived
+object before authorization or reconciliation.
 
 Authorization is valid only when it binds:
 

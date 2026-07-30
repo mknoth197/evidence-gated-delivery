@@ -444,6 +444,106 @@ Create and publish a marketing asset with a hero image.
         )
         self.assertEqual(validation_errors, [])
 
+    def test_authoritative_deliverable_kind_cannot_be_forged_nonvisual(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Create and publish a marketing asset with a hero image.
+
+## Tasks
+- [ ] **T-001 — Create marketing asset.** Objective: publish the hero image. Context: produce a visual deliverable. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN approved, THE SYSTEM SHALL publish the marketing asset. <!-- AC-001 -->
+"""
+        direction = "Create a visual marketing asset."
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=[direction]
+        )
+        self.assertEqual(errors, [])
+        forged = copy.deepcopy(inventory)
+        forged["deliverables"][0]["kind"] = "nonvisual"
+        receipt = visual.evaluate_visual_applicability(
+            forged,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(forged),
+        )
+        _, _, validation_errors = visual.validate_disposition(
+            receipt,
+            body,
+            require_embedded_inventory=True,
+            authoritative_user_directions=[direction],
+        )
+        self.assertTrue(
+            any("deliverables" in error for error in validation_errors),
+            validation_errors,
+        )
+
+    def test_build_plan_inventory_uses_canonical_multiline_task_grammar(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Update a validator workflow.
+
+## Tasks
+- [ ] **T-001 — Update validator.**
+  Objective: update validation.
+  Context: preserve current behavior.
+  Affected modules: `scripts/tool.py`.
+  Requirements: pass deterministically.
+  Verification: run focused tests.
+  Complete when all checks pass.
+  Owner lane: core.
+  `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN invoked, THE SYSTEM SHALL pass. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Do not generate images for backend work."]
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual([task["id"] for task in inventory["tasks"]], ["T-001"])
+        self.assertEqual(
+            [module["source"] for module in inventory["affected_modules"]],
+            ["scripts/tool.py"],
+        )
+
+    def test_runtime_planned_paths_retain_sufficiency_decision(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Adjust an existing component state.
+
+## Tasks
+- [ ] **T-001 — Adjust existing component.** Objective: update state behavior. Context: existing UI. Affected modules: `web/Panel.tsx`. Requirements: preserve layout. Verification: inspect the runtime. Complete when verified. Owner lane: web. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN opened, THE SYSTEM SHALL expose the existing component state. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Use current runtime evidence."]
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(inventory["planned_paths"][0]["runtime_evidence_sufficient"])
+        receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(receipt["evidence_mode"], "runtime_capture")
+
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan
 

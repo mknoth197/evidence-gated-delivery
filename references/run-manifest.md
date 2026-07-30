@@ -165,7 +165,8 @@ visual_artifact_disposition binds `visual-applicability/v1` to the authoritative
 canonical inventory of the scoped deliverable, effective user direction, stable acceptance IDs,
 task IDs, affected-module entries, intended or actual paths, and repository evidence. Valid modes
 are `none`, `runtime_capture`, and `generative_mockup`. `none` requires complete positive
-nonvisual coverage and empty image receipts. `runtime_capture` requires current runtime evidence
+nonvisual coverage, exact authoritative deliverable binding, and empty image receipts.
+`runtime_capture` requires current runtime evidence
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

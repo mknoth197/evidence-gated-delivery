@@ -30,6 +30,7 @@ from plan_protocol import (
     WORKFLOW_VERSION_V2,
     PlanProtocolError,
     evaluate_graph_policy,
+    freeze_graph_draft,
     issue_body_sha256,
     parse_tasks,
     privacy_violations,
@@ -514,9 +515,28 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
     match = re.fullmatch(r"Execution auditor phase: ([a-z-]+)", expected_marker)
     return bool(
         match
-        and match.group(1).replace("-", "_") in task_name
-        and ("audit" in tokens or "auditor" in tokens)
+        and task_name
+        == f"execution_auditor_phase_{match.group(1).replace('-', '_')}"
     )
+
+
+def authoritative_graph_draft_errors(
+    draft: Any,
+    parent_issue_url: str,
+    repository: str,
+    tasks: list[dict[str, Any]],
+) -> list[str]:
+    """Bind a supplied graph draft to the canonical tasks parsed from Plan authority."""
+
+    errors = validate_graph_draft(draft)
+    try:
+        expected = freeze_graph_draft(parent_issue_url, repository, tasks)
+    except PlanProtocolError as exc:
+        errors.append(f"authoritative graph draft cannot be derived: {exc}")
+        return errors
+    if draft != expected:
+        errors.append("graph_draft does not match authoritative Plan tasks")
+    return errors
 
 
 def spec_hashes(root: Path) -> dict[str, str]:
@@ -1293,15 +1313,22 @@ def validate_plan_protocol_evidence(
         if event_type not in event_types:
             errors.append(f"GRAPH_REQUIRED plan_events must include {event_type}")
 
-    draft = data.get("graph_draft")
-    errors.extend(validate_graph_draft(draft))
-    capability = data.get("graph_capability_receipt")
-    authorization = data.get("graph_authorization")
     repository_match = re.fullmatch(
         r"https://github\.com/([^/]+/[^/]+)/issues/\d+",
         data.get("implementation_issue_url", ""),
     )
     repository = repository_match.group(1) if repository_match else ""
+    draft = data.get("graph_draft")
+    errors.extend(
+        authoritative_graph_draft_errors(
+            draft,
+            data.get("implementation_issue_url", ""),
+            repository,
+            tasks,
+        )
+    )
+    capability = data.get("graph_capability_receipt")
+    authorization = data.get("graph_authorization")
     login = capability.get("github_login", "") if isinstance(capability, dict) else ""
     account_id = (
         str(capability.get("github_account_id", ""))

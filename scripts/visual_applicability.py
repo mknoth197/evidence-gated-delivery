@@ -12,8 +12,15 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Iterable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from plan_protocol import PlanProtocolError, parse_tasks
 
 POLICY_VERSION = "visual-applicability/v1"
 BLOCKED_DECISION = "BLOCKED_PENDING_VISUAL_CLARIFICATION"
@@ -170,24 +177,55 @@ def extract_scope_inventory(
     if not ac_ids or len(ac_ids) != len(set(ac_ids)) or not _sequential(ac_ids, "AC"):
         errors.append("visual scope inventory requires unique sequential AC-NNN markers")
 
-    task_lines = re.findall(r"(?im)^[ \t]*[-*][ \t]+\[[ xX]\][ \t]+.+$", tasks)
+    try:
+        canonical_tasks = parse_tasks(body)
+    except PlanProtocolError:
+        canonical_tasks = None
+    if canonical_tasks is None:
+        task_records = [
+            {"source": line, "task_id": None, "affected_modules": None}
+            for line in re.findall(
+                r"(?im)^[ \t]*[-*][ \t]+\[[ xX]\][ \t]+.+$", tasks
+            )
+        ]
+    else:
+        task_records = [
+            {
+                "source": task["body"],
+                "task_id": task["task_id"],
+                "affected_modules": task["affected_modules"],
+            }
+            for task in canonical_tasks
+        ]
     task_ids: list[str] = []
     task_entries: list[dict[str, str]] = []
     modules: list[dict[str, str]] = []
-    for line in task_lines:
-        task_match = re.search(r"\b(T-\d{3})\b", line)
-        if task_match is None:
+    for record in task_records:
+        source = record["source"]
+        task_match = re.search(r"\b(T-\d{3})\b", source)
+        task_id = record["task_id"] or (
+            task_match.group(1) if task_match is not None else None
+        )
+        if task_id is None:
             errors.append("every task must contain a stable T-NNN marker")
             continue
-        task_id = task_match.group(1)
         task_ids.append(task_id)
-        modules_match = re.search(
-            r"Affected modules:\s*(.*?)\.\s+Requirements:", line, re.IGNORECASE
-        )
-        if modules_match is None:
-            errors.append(f"{task_id} lacks a parseable Affected modules clause")
-            continue
-        entries = [entry.strip() for entry in modules_match.group(1).split(",") if entry.strip()]
+        entries = record["affected_modules"]
+        modules_match = None
+        if entries is None:
+            modules_match = re.search(
+                r"Affected modules:\s*(.*?)\.\s+Requirements:",
+                source,
+                re.IGNORECASE,
+            )
+            if modules_match is None:
+                errors.append(f"{task_id} lacks a parseable Affected modules clause")
+                continue
+            entries = [
+                entry.strip()
+                for entry in modules_match.group(1).split(",")
+                if entry.strip()
+            ]
         if not entries:
             errors.append(f"{task_id} has no affected-module entries")
         for entry in entries:
@@ -222,16 +260,20 @@ def extract_scope_inventory(
             for module in modules
             if module["task_id"] == task_id
         }
-        intent_match = re.match(
-            r"(?i)^[ \t]*[-*][ \t]+\[[ xX]\][ \t]+\*\*T-\d{3}[^\n]*?\*\*"
-            r"(.*?)(?=Affected modules:)",
-            line,
-        )
-        task_intent = (
-            re.sub(r"[*`]", "", line[: modules_match.start()])
-            if intent_match is None
-            else re.sub(r"[*`]", "", intent_match.group(0))
-        )
+        if canonical_tasks is not None:
+            task_intent = source
+        else:
+            assert modules_match is not None
+            intent_match = re.match(
+                r"(?i)^[ \t]*[-*][ \t]+\[[ xX]\][ \t]+\*\*T-\d{3}[^\n]*?\*\*"
+                r"(.*?)(?=Affected modules:)",
+                source,
+            )
+            task_intent = (
+                re.sub(r"[*`]", "", source[: modules_match.start()])
+                if intent_match is None
+                else re.sub(r"[*`]", "", intent_match.group(0))
+            )
         intent_group = _intent_group(task_intent)
         if intent_group == "generative":
             task_group = "generative"
@@ -253,7 +295,7 @@ def extract_scope_inventory(
                     if task_group == "runtime"
                     else "nonvisual"
                 ),
-                "source": line.strip(),
+                "source": source.strip(),
                 "provenance": f"authoritative Tasks entry {task_id}",
                 "classification_basis": "affected_modules",
                 **(
@@ -388,6 +430,15 @@ def build_plan_inventory(
                 "path": path,
                 "kind": module.get("kind"),
                 "provenance": module.get("provenance"),
+                **(
+                    {
+                        "runtime_evidence_sufficient": module[
+                            "runtime_evidence_sufficient"
+                        ]
+                    }
+                    if isinstance(module.get("runtime_evidence_sufficient"), bool)
+                    else {}
+                ),
             }
         )
     inventory["planned_paths"] = planned_paths
@@ -803,6 +854,7 @@ def validate_disposition(
     errors.extend(authoritative_errors)
     if not authoritative_errors and embedded_inventory is not None:
         for domain in (
+            "deliverables",
             "user_directions",
             "acceptance_criteria",
             "tasks",

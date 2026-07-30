@@ -175,6 +175,18 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                 "Execution auditor phase: research",
             )
         )
+        for ambiguous in (
+            "implementation_research_audit",
+            "research_plan_auditor",
+            "execution_auditor_phase_research_plan",
+        ):
+            with self.subTest(ambiguous=ambiguous):
+                self.assertFalse(
+                    validator.persisted_delegation_role_matches(
+                        {"task_name": ambiguous, "message": "gAAAAABencrypted"},
+                        "Execution auditor phase: research",
+                    )
+                )
         self.assertTrue(
             validator.persisted_delegation_role_matches(
                 {
@@ -584,6 +596,39 @@ No UI.
         )
         self.assertTrue(any("event_sha256" in error for error in errors), errors)
 
+    def test_graph_draft_must_match_authoritative_plan_tasks(self):
+        authoritative_tasks = [
+            {
+                "task_id": "T-001",
+                "title": "Authoritative task",
+                "body": "- [ ] **T-001 — Authoritative task.**",
+                "depends_on": [],
+            }
+        ]
+        forged_tasks = [
+            {
+                "task_id": "T-001",
+                "title": "Unrelated task",
+                "body": "- [ ] **T-001 — Unrelated task.**",
+                "depends_on": [],
+            }
+        ]
+        forged = plan_protocol.freeze_graph_draft(
+            "https://github.com/o/r/issues/1",
+            "o/r",
+            forged_tasks,
+        )
+        errors = validator.authoritative_graph_draft_errors(
+            forged,
+            "https://github.com/o/r/issues/1",
+            "o/r",
+            authoritative_tasks,
+        )
+        self.assertTrue(
+            any("authoritative Plan tasks" in error for error in errors),
+            errors,
+        )
+
     def test_post_activation_manifest_cannot_omit_protocol_version(self):
         errors: list[str] = []
         validator.validate_plan_protocol_evidence(
@@ -701,6 +746,11 @@ class ReviewValidatorTests(unittest.TestCase):
     def make_repo(self, root: Path) -> tuple[str, str]:
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         subprocess.run(
+            ["git", "config", "commit.gpgsign", "false"],
+            cwd=root,
+            check=True,
+        )
+        subprocess.run(
             ["git", "config", "user.email", "review@example.invalid"],
             cwd=root,
             check=True,
@@ -731,6 +781,19 @@ class ReviewValidatorTests(unittest.TestCase):
             text=True,
         ).stdout.strip()
         return base, head
+
+    def test_make_repo_disables_inherited_commit_signing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repo(root)
+            signing = subprocess.run(
+                ["git", "config", "--local", "--get", "--bool", "commit.gpgsign"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(signing.stdout.strip(), "false")
 
     def test_changed_paths_bind_exact_live_pr_commits(self):
         with tempfile.TemporaryDirectory() as temporary:

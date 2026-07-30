@@ -640,6 +640,31 @@ def migrate_manifest_to_v2(
     previous_head = events[-1]["event_sha256"] if events else ZERO_HASH
     migrated = copy.deepcopy(manifest)
     previous_workflow_version = migrated.get("workflow_version")
+    if persist_activation:
+        activation_path = protocol_activation_receipt_path(migrated.get("run_id"))
+        if activation_path.exists():
+            try:
+                existing = json.loads(activation_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise PlanProtocolError(
+                    "stranded v2 activation receipt is unreadable"
+                ) from exc
+            stable_bindings = (
+                "run_id",
+                "parent_thread_id",
+                "repo_root",
+                "starting_commit",
+                "run_started_at",
+            )
+            if not isinstance(existing, dict) or any(
+                existing.get(field) != migrated.get(field)
+                for field in stable_bindings
+            ):
+                raise PlanProtocolError(
+                    "stranded v2 activation receipt does not match the legacy manifest"
+                )
+            recorded_at = recorded_at or existing.get("activated_at")
+            event_id = event_id or existing.get("activation_event_id")
     migrated["workflow_version"] = WORKFLOW_VERSION_V2
     migrated["plan_protocol_version"] = PLAN_PROTOCOL_V2
     migration_event = append_plan_event(

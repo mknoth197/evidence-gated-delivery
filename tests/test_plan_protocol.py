@@ -11,6 +11,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -377,6 +378,36 @@ class EventAndMigrationTests(unittest.TestCase):
             failed = subprocess.run(command, text=True, capture_output=True, check=False)
             self.assertEqual(failed.returncode, 1)
             self.assertEqual(path.read_text(), before)
+
+    def test_migration_recovers_stranded_activation_receipt(self):
+        manifest = {
+            "run_id": "migration-recovery",
+            "parent_thread_id": "019f0000-0000-7000-8000-000000000001",
+            "repo_root": "/repo",
+            "starting_commit": "a" * 40,
+            "run_started_at": "2026-07-28T10:00:00Z",
+            "workflow_version": "legacy-workflow",
+            "plan_protocol_version": protocol.PLAN_PROTOCOL_V1,
+            "plan_events": [],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                abandoned = copy.deepcopy(manifest)
+                protocol.migrate_manifest_to_v2(
+                    abandoned,
+                    recorded_at="2026-07-29T10:00:00Z",
+                    event_id="00000000-0000-4000-8000-000000000001",
+                )
+                recovered = copy.deepcopy(manifest)
+                protocol.migrate_manifest_to_v2(recovered)
+        self.assertEqual(
+            recovered["plan_events"][-1]["event_id"],
+            abandoned["plan_events"][-1]["event_id"],
+        )
+        self.assertEqual(
+            recovered["plan_events"][-1]["event_sha256"],
+            abandoned["plan_events"][-1]["event_sha256"],
+        )
 
 
 class AuditTests(unittest.TestCase):

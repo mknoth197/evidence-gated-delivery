@@ -103,9 +103,10 @@ collaboration stores the assignment in the parent trace but not as a child `user
 The validator then requires the UUID-backed child metadata and completion to match the parent spawn
 call, start event, completed callback, parent ID, agent path, timestamps, and result hash. A
 manifest-only role assertion is insufficient. Because Desktop may encrypt the `message` argument in
-the persisted parent trace, the unencrypted delegation `task_name` must also identify the phase and
-auditor role (for example, `execution_auditor_phase_implement`); the validator accepts the exact
-plaintext prompt marker or that persisted machine-readable task-name marker.
+the persisted parent trace, the unencrypted delegation `task_name` must use the exact
+`execution_auditor_phase_<phase>` shape, such as `execution_auditor_phase_implement`. When the
+message remains plaintext, the exact prompt marker also authenticates the role; an encrypted
+message never permits a generic, mixed-phase, or cross-role task name to substitute.
 
 In a `realtime_voice` parent
 session, delegation agents do not receive standalone session files; record
