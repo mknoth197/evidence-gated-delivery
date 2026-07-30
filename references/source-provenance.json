@@ -1,0 +1,33 @@
+{
+  "schema_version": "source-provenance/v1",
+  "sources": [
+    {
+      "project": "lousy-agents/skills",
+      "repository": "https://github.com/lousy-agents/skills",
+      "commit": "b82466fe5163ae2e2a469d13b2e19714c7466464",
+      "license": "BSD-2-Clause",
+      "notice": "THIRD_PARTY_NOTICES.md",
+      "installed_notices": [
+        "bundled-skills/plan-auditor/THIRD_PARTY_NOTICE.md",
+        "bundled-skills/plan-to-graph/THIRD_PARTY_NOTICE.md"
+      ],
+      "reviewed_paths": [
+        "README.md#hi-fi-planning",
+        "skills/spec-auditor/SKILL.md",
+        "skills/plan-to-graph/SKILL.md"
+      ],
+      "derived_artifacts": [
+        "bundled-skills/plan-auditor/SKILL.md",
+        "bundled-skills/plan-to-graph/SKILL.md"
+      ],
+      "decision": "clean-room portable reimplementation",
+      "adaptations": [
+        "GitHub implementation issue is the sole normative Plan artifact",
+        "plan-protocol/v2 stable task and audit receipts",
+        "validator-owned graph policy and phase validity",
+        "hash-bound explicit authorization and exact-subset recovery",
+        "authenticated remote read-back and append-only action evidence"
+      ]
+    }
+  ]
+}

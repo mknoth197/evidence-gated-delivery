@@ -7,7 +7,7 @@ Owns:
 - phase boundaries and human approval gates;
 - shared evidence packet and frozen contracts;
 - subagent prompts, ownership, and dependency order;
-- ImageGen execution when workers cannot invoke it;
+- visual-applicability evaluation and ImageGen execution only when `generative_mockup` applies;
 - tournament synthesis and confidence score;
 - cross-worker integration and plan-versus-reality decisions;
 - protected-system boundaries;
@@ -26,25 +26,27 @@ Common inputs:
 - same non-negotiable product, data, access, privacy, and rollout boundaries;
 - same scoring rubric.
 
-Each returns:
+Each always returns:
 
 - a distinct solution thesis;
 - information architecture and interaction model;
 - data/contract implications;
 - important states and edge cases;
 - tradeoffs and risks;
-- an ImageGen-ready visual brief.
+- an ImageGen-ready visual brief only when `generative_mockup` applies.
 
 Contestants do not see or revise each other's submissions before judging.
 
-The orchestrator completes each submission by generating an ImageGen visual from that contestant's
+In `generative_mockup`, the orchestrator completes each submission by generating an ImageGen visual from that contestant's
 brief without changing its concept. The immutable judge packet for each contestant is:
 
 ```text
 contestant concept + contestant visual brief + orchestrator-generated ImageGen visual
 ```
 
-Judging cannot begin until all three packets are complete.
+In `none` or `runtime_capture`, the immutable judge packet is the concept plus applicable runtime
+evidence, and image receipt arrays stay empty. Judging cannot begin until all three applicable
+packets are complete.
 
 ## Tournament Judges
 
@@ -66,6 +68,21 @@ Each returns independently:
 
 Do not reveal one judge's verdict to the other before both finish.
 
+## Independent Plan Spec Auditor
+
+Spawn fresh and read-only for preliminary audit, remediation recheck, and final remote-body audit.
+Start the prompt with `Independent Plan spec auditor`. The auditor must be distinct from patch
+authors, contestants, tournament judges, phase execution auditors, transition judges,
+implementation workers, and every predecessor Plan auditor.
+Use a persisted task name containing `plan` and `audit`, such as
+`independent_plan_spec_auditor_final`.
+
+Every receipt binds its collaboration-delegated parent/child trace, exact canonical issue-body
+SHA-256, stable findings, predecessor lineage when applicable, timestamps, callback SHA-256, and
+canonical receipt SHA-256. Blocker and High findings require a fresh verified recheck. Medium
+findings require a verified patch or explicit owner, rationale, and accepted/deferred disposition.
+Only a fresh `final_remote` receipt for the exact remotely read body may satisfy Plan.
+
 ## Execution Auditor
 
 Spawn a fresh read-only execution auditor before every Research, Plan, Implement, or Review
@@ -80,7 +97,18 @@ tool-event log. Start its prompt with `Execution auditor phase: <phase>`. Its re
 and repeats every evidence ID it verified. It returns an explicit `PASS` or `FAIL`; only `PASS`
 permits transition. Record the completed receipt, the SHA-256 of its exact final response, and its
 evidence IDs in `trace_audits` before rerunning the phase validator. The validator authenticates
-ordinary auditors against their local Codex subagent session record. In a `realtime_voice` parent
+ordinary auditors against their local Codex subagent session record. When Codex Desktop
+collaboration stores the assignment in the parent trace but not as a child `user` message, record
+`receipt_kind: collaboration_delegated`, the UUID `agent_id`, exact `agent_path`, and `role_marker`.
+The validator then requires the UUID-backed child metadata and completion to match the parent spawn
+call, start event, completed callback, parent ID, agent path, timestamps, and result hash. A
+manifest-only role assertion is insufficient. Because Desktop may encrypt the `message` argument in
+the persisted parent trace, the unencrypted delegation `task_name` must use the exact
+`execution_auditor_phase_<phase>` shape, such as `execution_auditor_phase_implement`. When the
+message remains plaintext, the exact prompt marker also authenticates the role; an encrypted
+message never permits a generic, mixed-phase, or cross-role task name to substitute.
+
+In a `realtime_voice` parent
 session, delegation agents do not receive standalone session files; record
 `receipt_kind: realtime_delegated` and the exact delegated agent path instead. The validator then
 authenticates the matching depth-one start event and completed callback against the UUID-backed
@@ -149,18 +177,25 @@ Workers implement only their bounded lane. The orchestrator integrates coupled b
 ## Test-Coverage Reviewer
 
 Fresh and read-only.
+In encrypted Desktop collaboration runtimes, use
+`test_coverage_reviewer` as the exact persisted task name and record
+`receipt_kind: collaboration_delegated` plus `agent_path`; validation binds the parent spawn,
+child UUID, callback, timestamps, exact callback SHA-256, and task-name marker. The manifest
+`result` must equal the authenticated callback, and `started_at`/`completed_at` must equal the
+authenticated delegation and child-completion timestamps. A transition-judge task name, generic
+review task name, self-attestation, or UUID-only receipt cannot satisfy this role.
 
 Inputs:
 
 - GitHub implementation issue;
-- mockup-accounting matrix;
+- mockup/disposition-accounting matrix;
 - final diff;
 - relevant tests and quality-gate configuration.
 
 Returns:
 
 - acceptance criterion to test mapping;
-- mockup row to test mapping;
+- accounting row to test mapping;
 - uncovered success, failure, partial, privacy, accessibility, responsive, and rollout states;
 - findings ordered by severity with file and line evidence;
 - explicit statement of criteria with no meaningful coverage.
@@ -168,10 +203,12 @@ Returns:
 ## Acceptance And Visual Reviewer
 
 Fresh, read-only, and distinct from the test-coverage reviewer.
+Run this role only when `runtime_capture` or `generative_mockup` applies.
 
 Inputs:
 
-- normative final ImageGen mockup;
+- current runtime evidence for `runtime_capture` or normative final ImageGen mockup for
+  `generative_mockup`;
 - implementation issue;
 - production baseline;
 - local desktop and mobile runtime;
@@ -179,7 +216,7 @@ Inputs:
 
 Returns:
 
-- mockup-gap ledger covering layout, hierarchy, copy, data mapping, interaction, states,
+- visual-gap ledger covering layout, hierarchy, copy, data mapping, interaction, states,
   accessibility, and responsive behavior;
 - findings ordered by severity with evidence;
 - unexplained differences requiring correction;

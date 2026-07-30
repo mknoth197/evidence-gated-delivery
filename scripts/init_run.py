@@ -13,6 +13,21 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from plan_protocol import (
+    ACTIVATION_RECEIPT_V2,
+    PLAN_PROTOCOL_V2,
+    WORKFLOW_VERSION_V2,
+    PlanProtocolError,
+    append_plan_event,
+    activation_receipt_binds_workflow_identity,
+    protocol_activation_receipt_path,
+    record_protocol_activation,
+)
+
 
 def git(root: Path, *args: str) -> str:
     result = subprocess.run(
@@ -65,6 +80,46 @@ def main() -> int:
     now_text = now.isoformat().replace("+00:00", "Z")
     run_id = args.run_id or f"{slug(args.goal)}-{now.strftime('%Y%m%dT%H%M%SZ')}"
     output = args.output or Path(f"/tmp/evidence-gated-delivery-{run_id}.json")
+    if output.exists():
+        print(f"error: refusing to overwrite existing manifest {output}", file=sys.stderr)
+        return 2
+    parent_thread_id = os.environ.get("CODEX_THREAD_ID", "")
+    starting_commit = git(root, "rev-parse", "HEAD")
+    activation_recorded_at = now_text
+    activation_event_id = None
+    activation_path = protocol_activation_receipt_path(run_id)
+    if activation_path.exists():
+        try:
+            stranded = json.loads(activation_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise PlanProtocolError("stranded initialization receipt is unreadable") from exc
+        binds_workflow_identity = activation_receipt_binds_workflow_identity(
+            stranded
+        )
+        if not binds_workflow_identity:
+            raise PlanProtocolError(
+                "legacy stranded activation receipt is quarantined; "
+                "authenticated workflow-identity upgrade required"
+            )
+        stable_bindings = {
+            "run_id": run_id,
+            "parent_thread_id": parent_thread_id,
+            "repo_root": str(root),
+            "starting_commit": starting_commit,
+            "mode": args.mode,
+            "goal": args.goal,
+            "workflow_version": WORKFLOW_VERSION_V2,
+            "plan_protocol_version": PLAN_PROTOCOL_V2,
+        }
+        if not isinstance(stranded, dict) or any(
+            stranded.get(field) != value for field, value in stable_bindings.items()
+        ):
+            raise PlanProtocolError(
+                "stranded initialization receipt does not match the requested run"
+            )
+        now_text = str(stranded.get("run_started_at", ""))
+        activation_recorded_at = str(stranded.get("activated_at", ""))
+        activation_event_id = stranded.get("activation_event_id")
     spec_status = [
         line
         for line in git(root, "status", "--porcelain", "--", ".github/specs").splitlines()
@@ -74,22 +129,24 @@ def main() -> int:
     manifest = {
         "run_id": run_id,
         "run_started_at": now_text,
-        "parent_thread_id": os.environ.get("CODEX_THREAD_ID", ""),
+        "parent_thread_id": parent_thread_id,
         "phase_timeline": {
             "research_started_at": now_text,
             "research_completed_at": "",
             "plan_started_at": "",
             "plan_completed_at": "",
+            "implement_completed_at": "",
+            "review_completed_at": "",
         },
         "mode": args.mode,
         "goal": args.goal,
         "selected_mode_reason": "",
         "repo_root": str(root),
-        "starting_commit": git(root, "rev-parse", "HEAD"),
+        "starting_commit": starting_commit,
         "initial_spec_status": spec_status,
         "initial_spec_hashes": spec_hashes(root),
         "approved_artifact_hosts": [],
-        "workflow_version": "evidence-gated-delivery/continuous-improvement-v1",
+        "workflow_version": WORKFLOW_VERSION_V2,
         "automation_policy": {
             "default_mode": "autonomous",
             "auto_transition_min_confidence": 8,
@@ -119,7 +176,38 @@ def main() -> int:
         "contestant_images": [],
         "judge_rubric": [],
         "semantic_visual_reviews": [],
+        "visual_artifact_disposition": {
+            "policy_version": "visual-applicability/v1",
+            "decision": "",
+            "evidence_mode": "",
+            "matched_triggers": [],
+            "scoped_components": [],
+            "evidence": [],
+            "uncertainty": [],
+            "scope_inventory_status": "",
+            "scope_inventory_sha256": "",
+            "phase_binding": {
+                "phase": "plan",
+                "authoritative_issue_body_sha256": "",
+                "recompute_at": ["implement-orientation", "review"],
+            },
+            "evaluated_at": "",
+        },
+        "runtime_visual_evidence": [],
+        "visual_user_directions": [],
+        "rejected_visual_artifacts": [],
+        "plan_protocol_version": "plan-protocol/v2",
+        "plan_protocol_initialized_at": now_text,
+        "plan_events": [],
+        "plan_audits": [],
+        "graph_policy_receipt": {},
+        "graph_capability_receipt": {},
+        "graph_draft": {},
+        "graph_authorization": {},
+        "graph_actions": [],
+        "graph_remote_state": {},
         "selected_winner": "",
+        "synthesis_confidence": 0,
         "synthesized_differentiators": [],
         "rejected_differentiators": [],
         "final_image_iterations": [],
@@ -148,6 +236,17 @@ def main() -> int:
         "continuing_to": "",
         "next_invocation": "",
     }
+    activation_event = append_plan_event(
+        manifest["plan_events"],
+        "protocol_initialized",
+        {
+            "plan_protocol_version": manifest["plan_protocol_version"],
+            "starting_commit": manifest["starting_commit"],
+        },
+        recorded_at=activation_recorded_at,
+        event_id=activation_event_id,
+    )
+    record_protocol_activation(manifest, activation_event)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(manifest, indent=2) + "\n")

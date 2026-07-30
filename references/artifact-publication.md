@@ -9,10 +9,11 @@ Plan publication is a transaction. Issue creation alone does not complete Plan.
 1. Draft the issue body locally using the exact top-level headings required by Plan Mode.
 2. Keep `## Acceptance Criteria` top-level. Put all EARS statements in that section.
 3. Keep implementation checkboxes in `## Tasks`.
-4. Keep only normative visual rows in `## Mockup Accounting Matrix`.
-5. Generate the final ImageGen file and record its SHA-256.
-6. Obtain a durable HTTP(S) mockup URL using the routes below.
-7. Put the exact URL and SHA-256 in the issue body.
+4. Put the validator-bound visual disposition and scope/accounting rows in
+   `## Mockup Accounting Matrix`.
+5. Only for `generative_mockup`, generate the final ImageGen file and record its SHA-256.
+6. Only for `generative_mockup`, obtain a durable HTTP(S) mockup URL using the routes below.
+7. Only for `generative_mockup`, put the exact URL and SHA-256 in the issue body.
 8. Create or update the Plan issue.
 9. Update the Research issue body, not only a comment, with the exact Plan issue URL.
 10. Read both issue bodies back remotely.
@@ -27,7 +28,8 @@ Do not write transition-evidence prose claiming validation before steps 10-12 fi
 
 ## Publication Claim Gate
 
-Uploading a file into a browser composer is `started`, not published. A durable mockup may be
+This gate applies only to `generative_mockup`. Uploading a file into a browser composer is
+`started`, not published. A durable mockup may be
 called published only after all of the following are true:
 
 1. the mutation request succeeded;
@@ -42,7 +44,7 @@ missing transaction step.
 
 ## Durable Mockup Routes
 
-Try in this order:
+For `generative_mockup`, try in this order:
 
 1. Use authenticated GitHub browser UI attachment upload when available. Retain the resulting
    `github.com/user-attachments/...` URL.
@@ -61,7 +63,7 @@ create GitHub issues.
 
 ## Blocked Publication
 
-If no durable route succeeds:
+In `generative_mockup`, if no durable route succeeds:
 
 - create or retain the Plan issue only as a blocked draft when preserving work is useful;
 - put `> **Status: BLOCKED - final mockup is not durably published**` at the top;

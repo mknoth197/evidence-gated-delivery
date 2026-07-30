@@ -428,6 +428,226 @@ class AuditorAuthenticationTests(unittest.TestCase):
                 )
         self.assertTrue(any("depth-one Codex subagent" in error for error in errors))
 
+    def test_graph_authorization_binds_exact_parent_user_message(self):
+        draft_sha = "b" * 64
+        message = f"Authorize graph draft {draft_sha}"
+        with tempfile.TemporaryDirectory() as directory:
+            session_dir = Path(directory) / "sessions" / "2026" / "07" / "23"
+            session_dir.mkdir(parents=True)
+            session = session_dir / f"rollout-{self.parent_thread_id}.jsonl"
+            records = [
+                {
+                    "type": "session_meta",
+                    "payload": {"id": self.parent_thread_id},
+                },
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-07-23T12:05:00Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": message}],
+                    },
+                },
+            ]
+            session.write_text(
+                "\n".join(json.dumps(record) for record in records) + "\n"
+            )
+            authorization = {
+                "authorization_evidence": {
+                    "receipt_kind": "authenticated_parent_user_message",
+                    "parent_thread_id": self.parent_thread_id,
+                    "draft_sha256": draft_sha,
+                    "message_sha256": hashlib.sha256(message.encode()).hexdigest(),
+                    "authorized_at": "2026-07-23T12:05:00Z",
+                }
+            }
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                self.assertEqual(
+                    validator.collaboration_receipts.verify_parent_graph_authorization(
+                        {"parent_thread_id": self.parent_thread_id},
+                        authorization,
+                        {"draft_sha256": draft_sha},
+                    ),
+                    [],
+                )
+                forged = dict(authorization)
+                forged["authorization_evidence"] = dict(
+                    authorization["authorization_evidence"],
+                    draft_sha256="c" * 64,
+                )
+                self.assertTrue(
+                    validator.collaboration_receipts.verify_parent_graph_authorization(
+                        {"parent_thread_id": self.parent_thread_id},
+                        forged,
+                        {"draft_sha256": draft_sha},
+                    )
+                )
+
+    def test_graph_authorization_rejects_negated_or_conflicting_message(self):
+        draft_sha = "b" * 64
+        for message in (
+            f"I do not approve graph draft {draft_sha}",
+            f"Do not authorize graph draft {draft_sha}",
+            (
+                f"Authorize graph draft {draft_sha}.\n"
+                f"Actually, do not authorize graph draft {draft_sha}."
+            ),
+            f"Approve graph draft {draft_sha}. Actually, do not proceed.",
+        ):
+            with self.subTest(message=message):
+                with tempfile.TemporaryDirectory() as directory:
+                    session_dir = (
+                        Path(directory) / "sessions" / "2026" / "07" / "23"
+                    )
+                    session_dir.mkdir(parents=True)
+                    session = (
+                        session_dir
+                        / f"rollout-{self.parent_thread_id}.jsonl"
+                    )
+                    records = [
+                        {
+                            "type": "session_meta",
+                            "payload": {"id": self.parent_thread_id},
+                        },
+                        {
+                            "type": "response_item",
+                            "timestamp": "2026-07-23T12:05:00Z",
+                            "payload": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": message}
+                                ],
+                            },
+                        },
+                    ]
+                    session.write_text(
+                        "\n".join(json.dumps(record) for record in records)
+                        + "\n"
+                    )
+                    authorization = {
+                        "authorization_evidence": {
+                            "receipt_kind": "authenticated_parent_user_message",
+                            "parent_thread_id": self.parent_thread_id,
+                            "draft_sha256": draft_sha,
+                            "message_sha256": hashlib.sha256(
+                                message.encode()
+                            ).hexdigest(),
+                            "authorized_at": "2026-07-23T12:05:00Z",
+                        }
+                    }
+                    with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                        errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                            {"parent_thread_id": self.parent_thread_id},
+                            authorization,
+                            {"draft_sha256": draft_sha},
+                        )
+                    self.assertTrue(errors)
+
+    def test_graph_authorization_rejects_later_revocation(self):
+        draft_sha = "b" * 64
+        approval = f"Authorize graph draft {draft_sha}"
+        for revocation in (
+            f"Revoke authorization for graph draft {draft_sha}",
+            f"I no longer authorize graph draft {draft_sha}",
+            f"Rescind authorization for graph draft {draft_sha}",
+            f"Do not create graph draft {draft_sha}",
+            f"I changed my mind about graph draft {draft_sha}",
+        ):
+            with self.subTest(revocation=revocation):
+                with tempfile.TemporaryDirectory() as directory:
+                    session_dir = (
+                        Path(directory) / "sessions" / "2026" / "07" / "23"
+                    )
+                    session_dir.mkdir(parents=True)
+                    session = (
+                        session_dir
+                        / f"rollout-{self.parent_thread_id}.jsonl"
+                    )
+                    records = [
+                        {
+                            "type": "session_meta",
+                            "payload": {"id": self.parent_thread_id},
+                        },
+                        {
+                            "type": "response_item",
+                            "timestamp": "2026-07-23T12:05:00Z",
+                            "payload": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": approval}
+                                ],
+                            },
+                        },
+                        {
+                            "type": "response_item",
+                            "timestamp": "2026-07-23T12:06:00Z",
+                            "payload": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": revocation}
+                                ],
+                            },
+                        },
+                    ]
+                    session.write_text(
+                        "\n".join(json.dumps(record) for record in records)
+                        + "\n"
+                    )
+                    authorization = {
+                        "authorization_evidence": {
+                            "receipt_kind": "authenticated_parent_user_message",
+                            "parent_thread_id": self.parent_thread_id,
+                            "draft_sha256": draft_sha,
+                            "message_sha256": hashlib.sha256(
+                                approval.encode()
+                            ).hexdigest(),
+                            "authorized_at": "2026-07-23T12:05:00Z",
+                        }
+                    }
+                    with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                        errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                            {"parent_thread_id": self.parent_thread_id},
+                            authorization,
+                            {"draft_sha256": draft_sha},
+                        )
+                    self.assertTrue(errors)
+
+    def test_graph_authorization_fails_closed_without_parent_user_message(self):
+        draft_sha = "b" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            session_dir = Path(directory) / "sessions" / "2026" / "07" / "23"
+            session_dir.mkdir(parents=True)
+            session = session_dir / f"rollout-{self.parent_thread_id}.jsonl"
+            session.write_text(
+                json.dumps(
+                    {
+                        "type": "session_meta",
+                        "payload": {"id": self.parent_thread_id},
+                    }
+                )
+                + "\n"
+            )
+            authorization = {
+                "authorization_evidence": {
+                    "receipt_kind": "authenticated_parent_user_message",
+                    "parent_thread_id": self.parent_thread_id,
+                    "draft_sha256": draft_sha,
+                    "message_sha256": "a" * 64,
+                    "authorized_at": "2026-07-23T12:05:00Z",
+                }
+            }
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                    {"parent_thread_id": self.parent_thread_id},
+                    authorization,
+                    {"draft_sha256": draft_sha},
+                )
+            self.assertTrue(any("lacks an exact user authorization" in e for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

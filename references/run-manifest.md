@@ -19,7 +19,9 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
     "research_started_at": "",
     "research_completed_at": "",
     "plan_started_at": "",
-    "plan_completed_at": ""
+    "plan_completed_at": "",
+    "implement_completed_at": "",
+    "review_completed_at": ""
   },
   "mode": "orchestrate",
   "goal": "User goal",
@@ -63,7 +65,36 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "contestant_images": [],
   "judge_rubric": [],
   "semantic_visual_reviews": [],
+  "visual_artifact_disposition": {
+    "policy_version": "visual-applicability/v1",
+    "decision": "",
+    "evidence_mode": "",
+    "matched_triggers": [],
+    "scoped_components": [],
+    "evidence": [],
+    "uncertainty": [],
+    "scope_inventory_status": "",
+    "scope_inventory_sha256": "",
+    "phase_binding": {"phase":"plan","authoritative_issue_body_sha256":"","recompute_at":["implement-orientation","review"]},
+    "evaluated_at": ""
+  },
+  "runtime_visual_evidence": [],
+  "rejected_visual_artifacts": [],
+  "plan_protocol_version": "plan-protocol/v2",
+  "visual_user_directions": [
+    "Persist the exact effective user direction used by visual-applicability/v1."
+  ],
+  "plan_protocol_initialized_at": "",
+  "plan_events": [],
+  "plan_audits": [],
+  "graph_policy_receipt": {},
+  "graph_capability_receipt": {},
+  "graph_draft": {},
+  "graph_authorization": {},
+  "graph_actions": [],
+  "graph_remote_state": {},
   "selected_winner": "",
+  "synthesis_confidence": 0,
   "synthesized_differentiators": [],
   "rejected_differentiators": [],
   "final_image_iterations": [],
@@ -106,6 +137,28 @@ Use concrete strings, not booleans:
 - Query ID, table, API result, or freshness observation.
 - GitHub issue, PR, check, or discussion URL.
 
+## Plan Protocol v2
+
+New manifests include `plan_protocol_version: plan-protocol/v2`, a `protocol_initialized` event,
+Plan-audit receipts, graph-policy receipt, and graph transaction fields. The full schemas and
+legacy/migration rules are defined in [plan-protocol.md](plan-protocol.md). A missing version always
+fails closed; a legacy run must explicitly retain `plan-protocol/v1` before resume or migration.
+Migration also persists `workflow_version: evidence-gated-delivery/plan-protocol-v2` and a
+write-once versioned external activation receipt derived from `run_id`. The receipt binds the activation
+event, authenticated parent thread, run start, repository baseline, goal, mode, workflow, and protocol outside
+the mutable manifest/event chain. Validation recovers it by exact run ID or authenticated parent
+thread alone, then compares every other binding; identity substitution or restored legacy fields
+therefore fail even if migration events are removed. A v2 manifest without its authenticated
+external receipt, or without the receipt-bound activation event, fails closed.
+Unversioned transitional receipts that already contain goal and mode remain valid and cannot be
+rebound. Older identity-unbound receipts are explicitly quarantined pending an authenticated
+workflow-identity upgrade.
+
+`plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
+only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability
+receipt, exact draft authorization, ordered attempted/verified action records, and authenticated
+remote graph state. Graph publication is a separately authorized external write.
+
 ## Initiative identity, visual grounding, and external actions
 
 For Plan and later phases, initiative_identity binds exactly one name and slug to the research and
@@ -113,11 +166,32 @@ implementation issue URLs. Both URL values must exactly match the manifest field
 product surface or technology experiment starts a separate Research run and cannot reuse this Plan,
 tournament, mockup, or approval gate.
 
-visual_grounding records at least one current product-shell observation used by the mockups: surface,
-live URL, existing screenshot path, its SHA-256, observation time, and source components. A remembered
-or generic dashboard shell is not evidence.
+visual_artifact_disposition binds `visual-applicability/v1` to the authoritative Plan issue and a
+canonical inventory of the scoped deliverable, effective user direction, stable acceptance IDs,
+task IDs, affected-module entries, intended or actual paths, and repository evidence. Valid modes
+are `none`, `runtime_capture`, and `generative_mockup`. `none` requires complete positive
+nonvisual coverage, exact authoritative deliverable binding, and empty image receipts.
+`runtime_capture` requires current runtime evidence. Each evidence record names covered scope IDs,
+an allowed capture kind, timezone-aware capture timestamp, bounded evidence text, a readable absolute local
+artifact path, and a lowercase SHA-256 matching those artifact bytes. Sufficiency defaults false
+and is recomputed per scope entry from authoritative evidence; unreadable, digest-mismatched,
+content-type-mismatched, stale, or more than five minutes future-dated evidence cannot satisfy the gate. Embedded sufficiency values
+are never validation authority. Screenshot and visual-regression evidence currently requires a
+strictly parsed non-interlaced PNG with bounded compressed/decompressed size, valid critical
+chunks, CRCs, reconstructed scanlines, and indexed-color palette rules; unsupported recording
+containers and unvalidated ancillary PNG chunks fail closed.
+The validator uses the explicit, validated phase completion timestamp as the single upper
+freshness bound for that phase; evidence checks never read an ambient wall clock.
+but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
+publication receipts.
 
-external_actions records final-mockup-publication, plan-issue-readback, and research-issue-readback.
+visual_grounding records current product-shell observations used by `runtime_capture` or
+`generative_mockup`: surface, live URL, existing screenshot path, its SHA-256, observation time,
+and source components. It may be empty in mode `none`. A remembered or generic dashboard shell is
+not evidence.
+
+external_actions always records plan-issue-readback and research-issue-readback. It records
+final-mockup-publication only for `generative_mockup`.
 Each record includes id, kind, state, attempted_at, tool_event_id, result, and readback_evidence.
 States are not_started, attempted, blocked, and verified. A completed Plan requires every listed
 action to be verified; attempted or blocked must be reported as such with the repair invocation.
@@ -170,6 +244,30 @@ Use the fixed rubric and recorder in `continuous-improvement.md`. A Plan validat
 completed Research retrospective; Implement requires Research and Plan; Review requires Research,
 Plan, and Implement. Each item needs evidence for every rubric dimension. A below-threshold or
 degraded score must include rechecked remediation before its successor phase can validate.
+
+### Delegated execution-audit receipts
+
+Codex Desktop collaboration sessions persist the spawn and callback in the parent trace and the
+UUID-backed completion in the child trace, but may not replay the assignment as a child `user`
+message. Use `collaboration_delegated` with both identities:
+
+```json
+{
+  "phase":"research",
+  "receipt_kind":"collaboration_delegated",
+  "agent_id":"019f0000-0000-7000-8000-000000000001",
+  "agent_path":"/root/research_audit",
+  "role_marker":"Execution auditor phase: research",
+  "status":"completed",
+  "verdict":"PASS",
+  "result":"PASS ... E1 ...",
+  "result_sha256":"SHA-256 of the exact child completion and parent callback",
+  "verified_event_ids":["E1"]
+}
+```
+
+The validator requires the child metadata, parent spawn call and start event, exact parent callback,
+child task completion, agent UUID, agent path, parent ID, timestamps, and result hash to agree.
 
 ## Autonomous Transition Judgments
 
@@ -236,9 +334,11 @@ ImageGen receipt:
 }
 ```
 
-Final iterations use the same shape plus numeric `confidence`. Every path and call ID must be
-distinct across candidate and final images. `final_image_url` must be a durable HTTP(S) URL included
-in the published implementation issue.
+In `generative_mockup`, final iterations use the same shape plus numeric `confidence`. Every path
+and call ID must be distinct across candidate and final images. `final_image_url` must be a durable
+HTTP(S) URL included in the published implementation issue. In `none` and `runtime_capture`,
+contestant_images, semantic_visual_reviews, final_image_iterations, and final_image_url stay empty;
+rejected exploratory artifacts belong in rejected_visual_artifacts and have no authority.
 
 Semantic visual review:
 

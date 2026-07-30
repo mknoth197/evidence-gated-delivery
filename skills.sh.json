@@ -9,6 +9,14 @@
     {
       "name": "feature-to-spec",
       "path": "bundled-skills/feature-to-spec/SKILL.md"
+    },
+    {
+      "name": "plan-auditor",
+      "path": "bundled-skills/plan-auditor/SKILL.md"
+    },
+    {
+      "name": "plan-to-graph",
+      "path": "bundled-skills/plan-to-graph/SKILL.md"
     }
   ]
 }
