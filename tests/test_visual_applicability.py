@@ -671,10 +671,21 @@ Adjust an existing component state.
                 visual.runtime_evidence_sufficient("T-001", [forged_bomb])
             )
             for name, content in (
-                ("indexed.png", png_bytes(b"\x00\x00", color_type=3)),
+                (
+                    "indexed.png",
+                    png_bytes(
+                        b"\x00\x00",
+                        color_type=3,
+                        extra_chunks=((b"PLTE", b"\x00\x00\x00"),),
+                    ),
+                ),
                 (
                     "critical.png",
                     png_bytes(extra_chunks=((b"ABCD", b""),)),
+                ),
+                (
+                    "bad-chunk-name.png",
+                    png_bytes(extra_chunks=((b"ab1d", b""),)),
                 ),
             ):
                 invalid_png = Path(directory) / name
@@ -684,11 +695,18 @@ Adjust an existing component state.
                     artifact_path=str(invalid_png),
                     artifact_sha256=hashlib.sha256(content).hexdigest(),
                 )
-                self.assertFalse(
-                    visual.runtime_evidence_sufficient(
-                        "T-001", [invalid_evidence]
+                if name == "indexed.png":
+                    self.assertTrue(
+                        visual.runtime_evidence_sufficient(
+                            "T-001", [invalid_evidence]
+                        )
                     )
-                )
+                else:
+                    self.assertFalse(
+                        visual.runtime_evidence_sufficient(
+                            "T-001", [invalid_evidence]
+                        )
+                    )
             naive = dict(valid, captured_at="2026-07-29T12:00:00")
             self.assertFalse(
                 visual.runtime_evidence_sufficient(
@@ -807,6 +825,10 @@ Create a {deliverable} while recording visual-applicability.
             "launch badge for API documentation",
             "commemorative medallion for the service launch",
             "printed certificate for a workflow milestone",
+            "API launch badge",
+            "workflow milestone certificate",
+            "service award medallion",
+            "documentation commemorative plaque",
         ):
             with self.subTest(deliverable=deliverable):
                 body = f"""# Plan

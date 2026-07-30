@@ -185,9 +185,21 @@ def _valid_png(data: bytes) -> bool:
     saw_ihdr = False
     saw_idat = False
     idat_ended = False
+    saw_plte = False
+    palette_entries = 0
     while offset + 12 <= len(data):
         length = struct.unpack(">I", data[offset : offset + 4])[0]
         chunk_type = data[offset + 4 : offset + 8]
+        if (
+            len(chunk_type) != 4
+            or not all(
+                ord("A") <= byte <= ord("Z")
+                or ord("a") <= byte <= ord("z")
+                for byte in chunk_type
+            )
+            or chunk_type[2] & 0x20
+        ):
+            return False
         end = offset + 12 + length
         if end > len(data):
             return False
@@ -229,16 +241,27 @@ def _valid_png(data: bytes) -> bool:
             saw_iend = True
             break
         elif chunk_type == b"PLTE":
-            return False
+            if (
+                saw_plte
+                or saw_idat
+                or color_type in {0, 4}
+                or length < 3
+                or length > 768
+                or length % 3
+            ):
+                return False
+            saw_plte = True
+            palette_entries = length // 3
         elif chunk_type and chunk_type[0] & 0x20 == 0:
             return False
         elif saw_idat:
             idat_ended = True
         offset = end
-    channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type)
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
     allowed_depths = {
         0: {1, 2, 4, 8, 16},
         2: {8, 16},
+        3: {1, 2, 4, 8},
         4: {8, 16},
         6: {8, 16},
     }
@@ -247,6 +270,11 @@ def _valid_png(data: bytes) -> bool:
         or channels is None
         or bit_depth not in allowed_depths.get(color_type, set())
         or not compressed
+        or (color_type == 3 and not saw_plte)
+        or (
+            color_type == 3
+            and palette_entries > 2 ** int(bit_depth)
+        )
     ):
         return False
     row_bytes = (int(width) * channels * int(bit_depth) + 7) // 8
@@ -267,10 +295,49 @@ def _valid_png(data: bytes) -> bool:
         or not decompressor.eof
     ):
         return False
-    return all(
-        scanlines[row * (row_bytes + 1)] in range(5)
-        for row in range(int(height))
-    )
+    bytes_per_pixel = max(1, (channels * int(bit_depth) + 7) // 8)
+    previous = bytearray(row_bytes)
+    reconstructed_rows: list[bytes] = []
+    for row in range(int(height)):
+        start = row * (row_bytes + 1)
+        filter_type = scanlines[start]
+        if filter_type not in range(5):
+            return False
+        raw = scanlines[start + 1 : start + 1 + row_bytes]
+        reconstructed = bytearray(row_bytes)
+        for index, value in enumerate(raw):
+            left = reconstructed[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+            above = previous[index]
+            upper_left = previous[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+            if filter_type == 0:
+                predictor = 0
+            elif filter_type == 1:
+                predictor = left
+            elif filter_type == 2:
+                predictor = above
+            elif filter_type == 3:
+                predictor = (left + above) // 2
+            else:
+                estimate = left + above - upper_left
+                distances = (
+                    abs(estimate - left),
+                    abs(estimate - above),
+                    abs(estimate - upper_left),
+                )
+                predictor = (left, above, upper_left)[distances.index(min(distances))]
+            reconstructed[index] = (value + predictor) & 0xFF
+        reconstructed_rows.append(bytes(reconstructed))
+        previous = reconstructed
+    if color_type == 3:
+        mask = (1 << int(bit_depth)) - 1
+        for row in reconstructed_rows:
+            for pixel in range(int(width)):
+                bit_offset = pixel * int(bit_depth)
+                byte = row[bit_offset // 8]
+                shift = 8 - int(bit_depth) - (bit_offset % 8)
+                if (byte >> shift) & mask >= palette_entries:
+                    return False
+    return True
 
 
 def runtime_evidence_sufficient(
@@ -370,13 +437,17 @@ def _intent_group(text: str) -> str:
         intent_clause,
     )
     if creation:
-        created_object = creation.group("object")
+        created_object = creation.group("object").strip()
         if not re.search(
-            r"\b(?:validator|verifier|workflow|automation|test|fixture|documentation|"
-            r"readme|api|endpoint|service|function|method|script|tool|library|cli|"
-            r"backend|migration|schema|contract|parser|serializer|manifest|receipt|"
-            r"event|check|gate|policy|rule|configuration|integration|logic|handler|"
-            r"behavior|state|support|mechanism|capability|protocol)\b",
+            r"\b(?:validator|verifier|workflow|automation|tests?|fixtures?|"
+            r"documentation|readme|api|endpoint|service|functions?|methods?|"
+            r"scripts?|tools?|library|cli|backend|migration|schemas?|contracts?|"
+            r"parsers?|serializers?|manifests?|receipts?|events?|checks?|gates?|"
+            r"polic(?:y|ies)|rules?|configurations?|configs?|integrations?|logic|"
+            r"handlers?|behaviors?|states?|support|mechanisms?|capabilities?|"
+            r"protocols?|markers?|records?|adapters?|modules?|packages?|"
+            r"dependencies|types?|fields?|commands?|jobs?|settings?|templates?|"
+            r"prompts?|skills?)\b\s*$",
             created_object,
         ):
             return "ambiguous"

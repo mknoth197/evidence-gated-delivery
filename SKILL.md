@@ -282,10 +282,11 @@ Goal: choose and freeze what should be built.
    the authoritative evidence during validation; never reuse embedded sufficiency booleans.
    Screenshot and visual-regression evidence currently requires a structurally valid,
    non-interlaced PNG with bounded compressed/decompressed size, valid critical chunks, CRCs, and
-   scanlines; unsupported recording containers fail closed.
+   reconstructed scanlines, including conforming indexed-color palette rules; unsupported
+   recording containers fail closed.
    If a created deliverable cannot be confidently classified as visual or nonvisual, block for
-   bounded clarification instead of defaulting to `none`. Classify the created object separately
-   from surrounding API, service, workflow, or documentation context.
+   bounded clarification instead of defaulting to `none`. Classify the created object's head noun
+   separately from modifier or surrounding API, service, workflow, or documentation context.
    Capture the current authenticated product surface only when the selected mode requires it.
    An assumed shell may illustrate a research concept, but it is not eligible to be normative or to
    enter the mockup-accounting matrix.
