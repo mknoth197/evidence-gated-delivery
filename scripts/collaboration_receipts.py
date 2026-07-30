@@ -293,6 +293,7 @@ def verify_parent_graph_authorization(
         ]
     matched = False
     later_user_messages: list[str] = []
+    draft_token = re.escape(str(draft_sha).lower())
     try:
         records = [
             json.loads(line)
@@ -317,7 +318,6 @@ def verify_parent_graph_authorization(
             if item.get("timestamp") != evidence.get("authorized_at"):
                 continue
             lowered = message.lower()
-            draft_token = re.escape(str(draft_sha).lower())
             affirmative = re.fullmatch(
                 rf"(?is)\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
                 rf"(?:approve|authorize)\s+(?:the\s+)?"

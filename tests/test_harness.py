@@ -599,6 +599,38 @@ class AuditorAuthenticationTests(unittest.TestCase):
                 )
             self.assertTrue(errors)
 
+    def test_graph_authorization_fails_closed_without_parent_user_message(self):
+        draft_sha = "b" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            session_dir = Path(directory) / "sessions" / "2026" / "07" / "23"
+            session_dir.mkdir(parents=True)
+            session = session_dir / f"rollout-{self.parent_thread_id}.jsonl"
+            session.write_text(
+                json.dumps(
+                    {
+                        "type": "session_meta",
+                        "payload": {"id": self.parent_thread_id},
+                    }
+                )
+                + "\n"
+            )
+            authorization = {
+                "authorization_evidence": {
+                    "receipt_kind": "authenticated_parent_user_message",
+                    "parent_thread_id": self.parent_thread_id,
+                    "draft_sha256": draft_sha,
+                    "message_sha256": "a" * 64,
+                    "authorized_at": "2026-07-23T12:05:00Z",
+                }
+            }
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                    {"parent_thread_id": self.parent_thread_id},
+                    authorization,
+                    {"draft_sha256": draft_sha},
+                )
+            self.assertTrue(any("lacks an exact user authorization" in e for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()
