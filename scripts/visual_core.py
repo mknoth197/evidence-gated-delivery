@@ -118,82 +118,95 @@ NONVISUAL_OBJECT_PHRASE_VERBS = frozenset(
         "verify",
     }
 )
-VISUAL_POLICY_TOKEN = re.compile(
-    r"\b(?:visual[- ]applicability(?:/v1)?|visual_required|visual_not_applicable|"
-    r"runtime_capture|generative_mockup|blocked_pending_visual_clarification)\b"
+NONVISUAL_EARS_PREDICATES = (
+    r"emit deterministic structural findings tied to the candidate content hash",
+    r"prevent final plan validation until a targeted patch receives a fresh independent recheck",
+    r"require either a verified patch or an explicit owner, rationale, and disposition",
+    r"authenticate a fresh auditor session distinct from all authoring, contestant, judge, phase-auditor, transition-judge, and predecessor-auditor sessions",
+    r"verify its role, exact remote-body hash, result hash, callback equality, and remediation lineage from durable trace evidence",
+    r"canonicalize its body under the enumerated transport-only rules",
+    r"require its hash to equal the body hash reviewed by the final independent plan auditor",
+    r"invalidate the audit",
+    r"require a fresh independent recheck",
+    r"parse stable task ids, owner lanes, and explicit dependency ids without inferring dependencies from prose",
+    r"emit a recomputed no_graph receipt under graph-policy/v1",
+    r"classify the plan as graph_required",
+    r"prohibit child-issue and relationship mutations",
+    r"use the implementation issue as parent and preserve each task's complete structured context in one child issue",
+    r"reuse exact matches",
+    r"resume only the authorized missing items",
+    r"stop without creating, editing, or deleting remote artifacts",
+    r"require a newly frozen draft plus explicit reauthorization",
+    r"remotely verify every child identity, parent link, dependency relationship, and recorded action before issuing final plan valid",
+    r"continue to report the plan as not valid",
+    r"include the bundled plan-auditor and plan-to-graph skills",
+    r"verify their packaged copies remain synchronized",
+    r"cross-check the parent delegation event, child uuid session, role marker, callback equality, timestamps, and result hash",
+    r"exclude secrets, private prompts, pii, and unsupported performance or quality claims",
+    r"enter blocked",
+    r"resume only after remote-state reconciliation without destructive cleanup",
+    r"record immutable plan_protocol_version: plan-protocol/v2",
+    r"retain its recorded contract unless an explicit event-preserving migration is performed",
+    r"fail closed",
+    r"recompute visual-applicability/v1 from the scoped deliverable, affected surfaces, paths, components, acceptance criteria, and explicit user direction before any screenshot or imagegen call",
+    r"normalize their authority, scope, and source order before evaluating any visual trigger",
+    r"use the newer direction unless it would waive acceptance-critical evidence",
+    r"enter blocked_pending_visual_clarification before any screenshot or imagegen call",
+    r"classify the run as visual_required",
+    r"select runtime_capture",
+    r"not require imagegen",
+    r"select generative_mockup",
+    r"classify the run as visual_not_applicable",
+    r"not use that unrelated frontend as evidence that a visual is required",
+    r"default to visual_not_applicable",
+    r"block rather than emit visual_not_applicable",
+    r"enter blocked_pending_visual_clarification",
+    r"not treat the direction as a waiver",
+    r"block for clarification",
+    r"record the nonmaterial uncertainty",
+    r"use the otherwise proven disposition",
+    r"require empty contestant-image and final-image receipts",
+    r"omit mockup publication and visual-review gates",
+    r"verify complete positive nonvisual coverage in the disposition matrix",
+    r"require current runtime, dom/accessibility, or visual-regression evidence sufficient for the criteria",
+    r"omit imagegen-specific gates",
+    r"preserve all screenshot grounding, semantic review, durable publication, mockup accounting, accessibility, and implementation visual-comparison gates",
+    r"recompute visual applicability from the approved tasks and intended changed paths",
+    r"reject a stale plan receipt",
+    r"recompute visual applicability from the actual diff, changed paths, runtime surfaces, and acceptance criteria",
+    r"upgrade and block on any newly detected visual trigger",
+    r"record the copy-versus-reimplementation decision",
+    r"preserve every applicable bsd-2-clause notice or attribution",
 )
 
 
-def _is_visual_policy_statement(text: str) -> bool:
-    if not VISUAL_POLICY_TOKEN.search(text):
-        return False
-    if re.search(
-        r"\band\s+(?:shall\s+)?(?!(?:not\s+require\s+imagegen)\b)"
-        r"(?:create|generate|produce|render|display|show|present|expose|"
-        r"provide|deliver|publish|require|include|classify)\b",
-        text,
-    ):
-        return False
-    subject = r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
-    return any(
-        re.search(subject + predicate, text)
-        for predicate in (
-            r"classify\s+(?:the\s+)?(?:run|plan|workflow|mode|disposition)\b",
-            r"select\s+(?:`?(?:runtime_capture|generative_mockup)`?)\b",
-            r"recompute\s+(?:`?visual[- ]applicability(?:/v1)?`?)\b",
-            r"evaluate\s+(?:scoped\s+)?visual\s+(?:directions?|triggers?|applicability)\b",
-            r"normalize\s+(?:their|the)\s+(?:authority|scope|source order)\b",
-            r"enter\s+`?blocked_pending_visual_clarification`?\b",
-            r"default\s+to\s+`?visual_not_applicable`?\b",
-            r"block\s+(?:for clarification|rather than emit\s+`?visual_not_applicable`?)\b",
-            r"require\s+(?:empty contestant-image and final-image receipts|"
-            r"current runtime, dom/accessibility, or visual-regression evidence)\b",
-            r"omit\s+(?:mockup publication|imagegen-specific gates)\b",
-            r"verify\s+complete positive nonvisual coverage\b",
-            r"preserve\s+all screenshot grounding\b",
-        )
+def _system_predicate_clauses(text: str) -> list[str]:
+    subject = re.search(r"\b(?:system|validator)\s+shall\s+", text)
+    if subject is None:
+        return []
+    predicate = re.sub(r"\s*<!--.*$", "", text[subject.end():]).strip().rstrip(".")
+    predicate = re.sub(
+        r";\s*(?:if|otherwise)\b.*?\b(?:the\s+)?(?:system|validator)\s+shall\s+",
+        " and SHALL ",
+        predicate,
     )
+    clauses = re.split(
+        r"(?:,\s*|\s+and\s+)shall\s+",
+        predicate,
+        flags=re.IGNORECASE,
+    )
+    return [
+        re.sub(r"[`*]", "", clause).strip().strip(",").lower()
+        for clause in clauses
+        if clause.strip()
+    ]
 
 
-def _is_nonvisual_system_statement(text: str) -> bool:
-    if re.search(
-        r"\band\s+(?:(?:a|an|the)\s+|(?:shall\s+)?"
-        r"(?!(?:require\s+(?:its hash|a fresh independent recheck|"
-        r"a newly frozen draft))\b)(?:create|generate|produce|"
-        r"render|display|show|present|expose|provide|deliver|publish|require|"
-        r"include|classify)\b)",
-        text,
-    ):
-        return False
-    subject = r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
-    return any(
-        re.search(subject + predicate, text)
-        for predicate in (
-            r"prevent\s+final plan validation\b",
-            r"require\s+(?:either a verified patch|its hash|a fresh independent recheck)\b",
-            r"authenticate\s+a fresh auditor session\b",
-            r"canonicalize\s+its body\b",
-            r"invalidate\s+the audit\b",
-            r"parse\s+stable task ids\b",
-            r"emit\s+(?:deterministic structural findings|a recomputed `?no_graph`? receipt)\b",
-            r"classify\s+the plan as `?graph_required`?\b",
-            r"prohibit\s+child-issue and relationship mutations\b",
-            r"use\s+the implementation issue as parent\b",
-            r"reuse\s+exact matches\b",
-            r"stop\s+without creating, editing, or deleting remote artifacts\b",
-            r"verify\s+every child identity\b",
-            r"continue\s+to report the plan as not `?valid`?\b",
-            r"include\s+the bundled `?plan-auditor`? and `?plan-to-graph`? skills\b",
-            r"cross-check\s+the parent delegation event\b",
-            r"exclude\s+secrets, private prompts, pii\b",
-            r"enter\s+`?blocked`?\b",
-            r"record\s+immutable `?plan_protocol_version\b",
-            r"fail\s+closed\b",
-            r"normalize\s+their authority, scope, and source order\b",
-            r"use\s+the newer direction\b",
-            r"use\s+that unrelated frontend as evidence\b",
-            r"record\s+the copy-versus-reimplementation decision\b",
-        )
+def _is_complete_nonvisual_ears_statement(text: str) -> bool:
+    clauses = _system_predicate_clauses(text)
+    return bool(clauses) and all(
+        any(re.fullmatch(pattern, clause) for pattern in NONVISUAL_EARS_PREDICATES)
+        for clause in clauses
     )
 
 
@@ -380,7 +393,7 @@ def _intent_group(text: str) -> str:
     lowered = text.lower()
     if not lowered.strip():
         return "nonvisual"
-    if _is_visual_policy_statement(lowered):
+    if _is_complete_nonvisual_ears_statement(lowered):
         return "nonvisual"
     if any(
         re.search(pattern, lowered)
@@ -394,8 +407,6 @@ def _intent_group(text: str) -> str:
     inferred = _inferred_kind_group({"source": text})
     if inferred in {"generative", "runtime"}:
         return inferred
-    if _is_nonvisual_system_statement(lowered):
-        return "nonvisual"
     intent_clause = re.split(
         r"(?i)\b(?:affected modules|requirements|verification|complete when):",
         lowered,

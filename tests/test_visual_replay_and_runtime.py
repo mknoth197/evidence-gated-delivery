@@ -378,6 +378,45 @@ Implement a workflow policy.
                 self.assertEqual(receipt["decision"], "VISUAL_REQUIRED")
                 self.assertEqual(receipt["evidence_mode"], expected_mode)
 
+    def test_unconsumed_policy_predicate_suffixes_never_resolve_nonvisual(self):
+        predicates = (
+            "classify the workflow as VISUAL_REQUIRED, then create a hero image",
+            "classify the workflow as VISUAL_REQUIRED as well as create a hero image",
+            "classify the workflow as VISUAL_REQUIRED; additionally create a hero image",
+            "classify the workflow as VISUAL_REQUIRED while creating a hero image",
+            "classify the workflow as VISUAL_REQUIRED alongside a commemorative plaque",
+            "fail closed alongside a commemorative plaque",
+            "require a fresh independent recheck plus a commemorative plaque",
+        )
+        for predicate in predicates:
+            with self.subTest(predicate=predicate):
+                body = f"""# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Implement a workflow policy.
+
+## Tasks
+- [ ] **T-001 — Implement policy.** Objective: implement it. Context: workflow. Affected modules: `scripts/policy.py`. Requirements: enforce it. Verification: test it. Complete when green. Owner lane: core. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL {predicate}. <!-- AC-001 -->
+"""
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the visual policy."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertNotEqual(receipt["decision"], "VISUAL_NOT_APPLICABLE")
+                self.assertNotEqual(receipt["evidence_mode"], "none")
+
     def test_broader_visual_deliverables_cannot_fall_through_to_nonvisual(self):
         for deliverable, path in (
             ("product illustration", "assets/product-illustration.svg"),
