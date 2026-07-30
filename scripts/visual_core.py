@@ -396,11 +396,11 @@ def _intent_group(text: str) -> str:
     if _is_complete_nonvisual_ears_statement(lowered):
         return "nonvisual"
     if any(
-        re.search(pattern, lowered)
+        re.match(pattern, lowered)
         for pattern in (
-            r"\bimplement\s+visual-applicability/v1\b",
-            r"\bimplement\s+stable task parsing and graph-policy/v1\b",
-            r"\bbundle\s+collision-safe plan-to-graph\b",
+            r"^\s*implement visual-applicability/v1\.\s+objective:",
+            r"^\s*implement stable task parsing and graph-policy/v1\.\s+objective:",
+            r"^\s*bundle collision-safe plan-to-graph\.\s+objective:",
         )
     ):
         return "nonvisual"

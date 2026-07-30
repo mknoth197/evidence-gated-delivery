@@ -417,6 +417,40 @@ Implement a workflow policy.
                 self.assertNotEqual(receipt["decision"], "VISUAL_NOT_APPLICABLE")
                 self.assertNotEqual(receipt["evidence_mode"], "none")
 
+    def test_policy_task_names_cannot_mask_appended_visual_deliverables(self):
+        for goal in (
+            "Implement visual-applicability/v1 alongside a hero image.",
+            "Implement visual-applicability/v1 plus a commemorative plaque.",
+            "Bundle collision-safe plan-to-graph and create a mood board.",
+        ):
+            with self.subTest(goal=goal):
+                body = f"""# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+{goal}
+
+## Tasks
+- [ ] **T-001 — {goal}** Objective: deliver the requested scope. Context: workflow. Affected modules: `scripts/policy.py`. Requirements: implement it. Verification: inspect it. Complete when approved. Owner lane: core. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL return validation results. <!-- AC-001 -->
+"""
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the visual policy."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertNotEqual(receipt["decision"], "VISUAL_NOT_APPLICABLE")
+                self.assertNotEqual(receipt["evidence_mode"], "none")
+
     def test_broader_visual_deliverables_cannot_fall_through_to_nonvisual(self):
         for deliverable, path in (
             ("product illustration", "assets/product-illustration.svg"),
