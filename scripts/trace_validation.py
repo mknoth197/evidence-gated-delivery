@@ -3,9 +3,29 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
-def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str], *, deps: Any) -> None:
+
+@dataclass(frozen=True)
+class TraceDependencies:
+    completed_agent: Callable[..., bool]
+    agent_ids: Callable[..., list[str]]
+    nonempty: Callable[..., bool]
+    realtime_delegated_audit_evidence: Callable[..., Any]
+    collaboration_delegated_audit_evidence: Callable[..., Any]
+    agent_session_evidence: Callable[..., Any]
+    persisted_delegation_role_matches: Callable[..., bool]
+    timestamp: Callable[..., Any]
+
+
+def validate_trace_audit(
+    data: dict[str, Any],
+    phase: str,
+    errors: list[str],
+    *,
+    deps: TraceDependencies,
+) -> None:
     required_phase = "plan" if phase == "orchestrate-preapproval" else phase
     audits = data.get("trace_audits")
     matching = [

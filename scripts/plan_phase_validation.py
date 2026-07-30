@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from plan_protocol import (
     PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2, WORKFLOW_VERSION_V2,
@@ -15,13 +16,49 @@ from plan_protocol import (
     validate_protocol_version, verify_final_graph, verify_graph_authorization,
 )
 
+
+@dataclass(frozen=True)
+class PlanProtocolDependencies:
+    nonempty: Callable[..., bool]
+    timestamp: Callable[..., Any]
+    agent_ids: Callable[..., list[str]]
+    collaboration_delegated_audit_evidence: Callable[..., Any]
+    persisted_delegation_role_matches: Callable[..., bool]
+    authoritative_graph_draft_errors: Callable[..., list[str]]
+    _gh_json: Callable[..., Any]
+    _live_graph_capabilities: Callable[..., Any]
+    _remote_graph_state: Callable[..., Any]
+    _remote_workflow_graph_artifacts: Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class PlanGateDependencies:
+    PLAN_HEADINGS: tuple[str, ...]
+    add_research_errors: Callable[..., Any]
+    validate_plan_identity_and_evidence: Callable[..., None]
+    agent_ids: Callable[..., list[str]]
+    completed_agent: Callable[..., bool]
+    nonempty: Callable[..., bool]
+    validate_image_receipts: Callable[..., None]
+    finite_number: Callable[..., bool]
+    generated_image_file: Callable[..., bool]
+    issue_url: Callable[..., bool]
+    require_remote_issue: Callable[..., Any]
+    validate_plan_protocol_evidence: Callable[..., None]
+    validate_disposition: Callable[..., Any]
+    reference_present: Callable[..., bool]
+    durable_image_url: Callable[..., bool]
+    remote_image_sha256: Callable[..., Any]
+    markdown_section: Callable[..., str]
+
+
 def validate_plan_protocol_evidence(
     data: dict[str, Any],
     implementation_body: str,
     errors: list[str],
     *,
     skip_remote: bool,
-    deps: Any,
+    deps: PlanProtocolDependencies,
 ) -> None:
     protocol_errors = validate_protocol_version(data)
     errors.extend(protocol_errors)
@@ -300,7 +337,7 @@ def add_plan_errors(
     visual_phase: str = "plan",
     review_paths: list[str] | None = None,
     *,
-    deps: Any,
+    deps: PlanGateDependencies,
 ) -> None:
     research_body = deps.add_research_errors(data, errors, skip_remote)
     disposition = data.get("visual_artifact_disposition")

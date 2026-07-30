@@ -5,10 +5,32 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-def add_orientation_errors(data: dict[str, Any], errors: list[str], skip_remote: bool, *, deps: Any) -> None:
+
+@dataclass(frozen=True)
+class ReviewDependencies:
+    add_plan_errors: Callable[..., None]
+    nonempty: Callable[..., bool]
+    pr_url: Callable[..., bool]
+    github_pr_oids: Callable[..., Any]
+    completed_agent: Callable[..., bool]
+    collaboration_delegated_audit_evidence: Callable[..., Any]
+    persisted_delegation_role_matches: Callable[..., bool]
+    timestamp: Callable[..., Any]
+    agent_ids: Callable[..., list[str]]
+    github_readback: Callable[..., Any]
+
+
+def add_orientation_errors(
+    data: dict[str, Any],
+    errors: list[str],
+    skip_remote: bool,
+    *,
+    deps: ReviewDependencies,
+) -> None:
     deps.add_plan_errors(data, errors, skip_remote, visual_phase="implement-orientation")
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
@@ -17,7 +39,7 @@ def add_orientation_errors(data: dict[str, Any], errors: list[str], skip_remote:
 
 
 def review_changed_paths(
-    data: dict[str, Any], errors: list[str], *, deps: Any
+    data: dict[str, Any], errors: list[str], *, deps: ReviewDependencies
 ) -> list[str] | None:
     root = Path(data.get("repo_root", ""))
     starting_commit = data.get("starting_commit")
@@ -87,7 +109,7 @@ def validate_reviewer(
     errors: list[str],
     *,
     expected_marker: str | None = None,
-    deps: Any,
+    deps: ReviewDependencies,
 ) -> str | None:
     if not deps.completed_agent(entry):
         errors.append(f"{label} must be a completed agent receipt")
@@ -130,7 +152,7 @@ def add_implement_errors(
     visual_phase: str = "implement",
     review_paths: list[str] | None = None,
     *,
-    deps: Any,
+    deps: ReviewDependencies,
 ) -> None:
     deps.add_plan_errors(
         data,

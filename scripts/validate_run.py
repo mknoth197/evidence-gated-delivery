@@ -14,7 +14,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
@@ -89,6 +88,83 @@ RETROSPECTIVE_RUBRIC = {
     "delivery_reliability",
     "learning_quality",
 }
+
+
+def _trace_dependencies() -> trace_validation.TraceDependencies:
+    return trace_validation.TraceDependencies(
+        completed_agent=completed_agent,
+        agent_ids=agent_ids,
+        nonempty=nonempty,
+        realtime_delegated_audit_evidence=realtime_delegated_audit_evidence,
+        collaboration_delegated_audit_evidence=collaboration_delegated_audit_evidence,
+        agent_session_evidence=agent_session_evidence,
+        persisted_delegation_role_matches=persisted_delegation_role_matches,
+        timestamp=timestamp,
+    )
+
+
+def _plan_protocol_dependencies() -> plan_phase_validation.PlanProtocolDependencies:
+    return plan_phase_validation.PlanProtocolDependencies(
+        nonempty=nonempty,
+        timestamp=timestamp,
+        agent_ids=agent_ids,
+        collaboration_delegated_audit_evidence=collaboration_delegated_audit_evidence,
+        persisted_delegation_role_matches=persisted_delegation_role_matches,
+        authoritative_graph_draft_errors=authoritative_graph_draft_errors,
+        _gh_json=_gh_json,
+        _live_graph_capabilities=_live_graph_capabilities,
+        _remote_graph_state=_remote_graph_state,
+        _remote_workflow_graph_artifacts=_remote_workflow_graph_artifacts,
+    )
+
+
+def _plan_gate_dependencies() -> plan_phase_validation.PlanGateDependencies:
+    return plan_phase_validation.PlanGateDependencies(
+        PLAN_HEADINGS=PLAN_HEADINGS,
+        add_research_errors=add_research_errors,
+        validate_plan_identity_and_evidence=validate_plan_identity_and_evidence,
+        agent_ids=agent_ids,
+        completed_agent=completed_agent,
+        nonempty=nonempty,
+        validate_image_receipts=validate_image_receipts,
+        finite_number=finite_number,
+        generated_image_file=generated_image_file,
+        issue_url=issue_url,
+        require_remote_issue=require_remote_issue,
+        validate_plan_protocol_evidence=validate_plan_protocol_evidence,
+        validate_disposition=validate_disposition,
+        reference_present=reference_present,
+        durable_image_url=durable_image_url,
+        remote_image_sha256=remote_image_sha256,
+        markdown_section=markdown_section,
+    )
+
+
+def _review_dependencies() -> review_phase_validation.ReviewDependencies:
+    return review_phase_validation.ReviewDependencies(
+        add_plan_errors=add_plan_errors,
+        nonempty=nonempty,
+        pr_url=pr_url,
+        github_pr_oids=github_pr_oids,
+        completed_agent=completed_agent,
+        collaboration_delegated_audit_evidence=collaboration_delegated_audit_evidence,
+        persisted_delegation_role_matches=persisted_delegation_role_matches,
+        timestamp=timestamp,
+        agent_ids=agent_ids,
+        github_readback=github_readback,
+    )
+
+
+def _workflow_gate_dependencies() -> workflow_gate_validation.WorkflowGateDependencies:
+    return workflow_gate_validation.WorkflowGateDependencies(
+        nonempty=nonempty,
+        timestamp=timestamp,
+        finite_number=finite_number,
+        collaboration_delegated_audit_evidence=collaboration_delegated_audit_evidence,
+        agent_session_evidence=agent_session_evidence,
+        persisted_delegation_role_matches=persisted_delegation_role_matches,
+        RETROSPECTIVE_RUBRIC=RETROSPECTIVE_RUBRIC,
+    )
 
 
 def nonempty(value: Any) -> bool:
@@ -338,7 +414,7 @@ def spec_hashes(root: Path) -> dict[str, str]:
 
 def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str]) -> None:
     trace_validation.validate_trace_audit(
-        data, phase, errors, deps=SimpleNamespace(**globals())
+        data, phase, errors, deps=_trace_dependencies()
     )
 
 
@@ -710,7 +786,7 @@ def validate_plan_protocol_evidence(
         implementation_body,
         errors,
         skip_remote=skip_remote,
-        deps=SimpleNamespace(**globals()),
+        deps=_plan_protocol_dependencies(),
     )
 
 
@@ -727,13 +803,13 @@ def add_plan_errors(
         skip_remote,
         visual_phase,
         review_paths,
-        deps=SimpleNamespace(**globals()),
+        deps=_plan_gate_dependencies(),
     )
 
 
 def add_orientation_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) -> None:
     review_phase_validation.add_orientation_errors(
-        data, errors, skip_remote, deps=SimpleNamespace(**globals())
+        data, errors, skip_remote, deps=_review_dependencies()
     )
 
 
@@ -741,7 +817,7 @@ def review_changed_paths(
     data: dict[str, Any], errors: list[str]
 ) -> list[str] | None:
     return review_phase_validation.review_changed_paths(
-        data, errors, deps=SimpleNamespace(**globals())
+        data, errors, deps=_review_dependencies()
     )
 
 
@@ -751,7 +827,7 @@ def validate_reviewer(
 ) -> str | None:
     return review_phase_validation.validate_reviewer(
         data, entry, label, errors, expected_marker=expected_marker,
-        deps=SimpleNamespace(**globals()),
+        deps=_review_dependencies(),
     )
 
 
@@ -761,13 +837,13 @@ def add_implement_errors(
 ) -> None:
     review_phase_validation.add_implement_errors(
         data, errors, skip_remote, visual_phase, review_paths,
-        deps=SimpleNamespace(**globals()),
+        deps=_review_dependencies(),
     )
 
 
 def add_handoff_error(data: dict[str, Any], phase: str, errors: list[str]) -> None:
     workflow_gate_validation.add_handoff_error(
-        data, phase, errors, deps=SimpleNamespace(**globals())
+        data, phase, errors, deps=_workflow_gate_dependencies()
     )
 
 
@@ -775,19 +851,19 @@ def transition_judge_excluded_ids(
     data: dict[str, Any], current_judgment: dict[str, Any]
 ) -> set[str]:
     return workflow_gate_validation.transition_judge_excluded_ids(
-        data, current_judgment, deps=SimpleNamespace(**globals())
+        data, current_judgment, deps=_workflow_gate_dependencies()
     )
 
 
 def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: list[str]) -> None:
     workflow_gate_validation.validate_transition_gate(
-        data, target_phase, errors, deps=SimpleNamespace(**globals())
+        data, target_phase, errors, deps=_workflow_gate_dependencies()
     )
 
 
 def validate_retrospective_gate(data: dict[str, Any], phase: str, errors: list[str]) -> None:
     workflow_gate_validation.validate_retrospective_gate(
-        data, phase, errors, deps=SimpleNamespace(**globals())
+        data, phase, errors, deps=_workflow_gate_dependencies()
     )
 
 

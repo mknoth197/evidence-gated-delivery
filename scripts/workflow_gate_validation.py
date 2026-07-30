@@ -4,10 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
-def add_handoff_error(data: dict[str, Any], phase: str, errors: list[str], *, deps: Any) -> None:
+
+@dataclass(frozen=True)
+class WorkflowGateDependencies:
+    nonempty: Callable[..., bool]
+    timestamp: Callable[..., Any]
+    finite_number: Callable[..., bool]
+    collaboration_delegated_audit_evidence: Callable[..., Any]
+    agent_session_evidence: Callable[..., Any]
+    persisted_delegation_role_matches: Callable[..., bool]
+    RETROSPECTIVE_RUBRIC: Mapping[str, int]
+
+
+def add_handoff_error(
+    data: dict[str, Any],
+    phase: str,
+    errors: list[str],
+    *,
+    deps: WorkflowGateDependencies,
+) -> None:
     if phase == "orchestrate-preapproval":
         return
     continuing_to = data.get("continuing_to")
@@ -30,7 +49,10 @@ def add_handoff_error(data: dict[str, Any], phase: str, errors: list[str], *, de
 
 
 def transition_judge_excluded_ids(
-    data: dict[str, Any], current_judgment: dict[str, Any], *, deps: Any
+    data: dict[str, Any],
+    current_judgment: dict[str, Any],
+    *,
+    deps: WorkflowGateDependencies,
 ) -> set[str]:
     def every_declared_id(entries: Any) -> set[str]:
         return {
@@ -63,7 +85,13 @@ def transition_judge_excluded_ids(
     return excluded
 
 
-def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: list[str], *, deps: Any) -> None:
+def validate_transition_gate(
+    data: dict[str, Any],
+    target_phase: str,
+    errors: list[str],
+    *,
+    deps: WorkflowGateDependencies,
+) -> None:
     """Authorize a successor only after an independent, evidence-bound technical judgment."""
     predecessor_by_target = {"plan": "research", "implement": "plan", "review": "implement"}
     predecessor = predecessor_by_target.get(target_phase)
@@ -193,7 +221,13 @@ def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: li
         errors.append(f"{predecessor} requires a bound auto_proceed automation decision")
 
 
-def validate_retrospective_gate(data: dict[str, Any], phase: str, errors: list[str], *, deps: Any) -> None:
+def validate_retrospective_gate(
+    data: dict[str, Any],
+    phase: str,
+    errors: list[str],
+    *,
+    deps: WorkflowGateDependencies,
+) -> None:
     """Require fixed-rubric learning before a later phase is accepted."""
     required_by_phase = {
         "research": (),
