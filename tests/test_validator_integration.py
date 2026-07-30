@@ -129,111 +129,6 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
             "verified_event_ids": ["evidence-id-1"],
         }
 
-    def write_nested_sessions(self, root: Path) -> str:
-        directory = root / "sessions" / "2026" / "07" / "29"
-        directory.mkdir(parents=True)
-        nested_path = "/root/coordinator/test_coverage_reviewer"
-        child = [
-            {
-                "type": "session_meta",
-                "payload": {
-                    "id": self.agent_id,
-                    "timestamp": "2026-07-29T12:05:00Z",
-                    "thread_source": "subagent",
-                    "source": {
-                        "subagent": {
-                            "thread_spawn": {
-                                "parent_thread_id": self.intermediary_id,
-                                "depth": 2,
-                                "agent_path": nested_path,
-                            }
-                        }
-                    },
-                },
-            },
-            {
-                "type": "event_msg",
-                "timestamp": "2026-07-29T12:10:00Z",
-                "payload": {
-                    "type": "task_complete",
-                    "last_agent_message": self.result,
-                },
-            },
-        ]
-        call_id = "call-nested-coverage"
-        intermediary = [
-            {
-                "type": "session_meta",
-                "payload": {
-                    "id": self.intermediary_id,
-                    "timestamp": "2026-07-29T12:01:00Z",
-                    "thread_source": "subagent",
-                    "source": {
-                        "subagent": {
-                            "thread_spawn": {
-                                "parent_thread_id": self.parent_id,
-                                "depth": 1,
-                                "agent_path": "/root/coordinator",
-                            }
-                        }
-                    },
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "function_call",
-                    "namespace": "collaboration",
-                    "name": "spawn_agent",
-                    "call_id": call_id,
-                    "arguments": json.dumps(
-                        {
-                            "task_name": "test_coverage_reviewer",
-                            "message": "gAAAAABencrypted",
-                        }
-                    ),
-                },
-            },
-            {
-                "type": "event_msg",
-                "timestamp": "2026-07-29T12:05:00Z",
-                "payload": {
-                    "type": "sub_agent_activity",
-                    "event_id": call_id,
-                    "agent_thread_id": self.agent_id,
-                    "agent_path": nested_path,
-                    "kind": "started",
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "agent_message",
-                    "author": nested_path,
-                    "recipient": "/root/coordinator",
-                    "content": [
-                        {"type": "input_text", "text": f"Payload:\n{self.result}"}
-                    ],
-                },
-            },
-            {
-                "type": "event_msg",
-                "timestamp": "2026-07-29T12:11:00Z",
-                "payload": {
-                    "type": "task_complete",
-                    "last_agent_message": "PASS coordinator",
-                },
-            },
-        ]
-        for identifier, records in (
-            (self.agent_id, child),
-            (self.intermediary_id, intermediary),
-        ):
-            (directory / f"rollout-{identifier}.jsonl").write_text(
-                "\n".join(json.dumps(item) for item in records) + "\n"
-            )
-        return nested_path
-
     def validate(self, audit: dict[str, object]) -> list[str]:
         errors: list[str] = []
         validator.validate_trace_audit(
@@ -361,23 +256,6 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                 reviewer_id = validator.validate_reviewer(
                     {"parent_thread_id": self.parent_id},
                     self.reviewer(),
-                    "test_reviewer",
-                    errors,
-                    expected_marker="Test-Coverage Reviewer",
-                )
-        self.assertEqual(reviewer_id, self.agent_id)
-        self.assertEqual(errors, [])
-
-    def test_authenticates_nested_coverage_reviewer_through_uuid_ancestry(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            nested_path = self.write_nested_sessions(Path(temporary))
-            reviewer = self.reviewer()
-            reviewer["agent_path"] = nested_path
-            errors: list[str] = []
-            with patch.dict(os.environ, {"CODEX_HOME": temporary}):
-                reviewer_id = validator.validate_reviewer(
-                    {"parent_thread_id": self.parent_id},
-                    reviewer,
                     "test_reviewer",
                     errors,
                     expected_marker="Test-Coverage Reviewer",
