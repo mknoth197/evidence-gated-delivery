@@ -280,6 +280,10 @@ Goal: choose and freeze what should be built.
    Evidence older than the run freshness bound, unscoped prose, an unreadable or type-mismatched
    artifact, or a bare `{kind, evidence}` assertion is insufficient. Recompute these fields from
    the authoritative evidence during validation; never reuse embedded sufficiency booleans.
+   Screenshot and visual-regression evidence currently requires a structurally valid,
+   non-interlaced PNG; unsupported recording containers fail closed.
+   If a created deliverable cannot be confidently classified as visual or nonvisual, block for
+   bounded clarification instead of defaulting to `none`.
    Capture the current authenticated product surface only when the selected mode requires it.
    An assumed shell may illustrate a research concept, but it is not eligible to be normative or to
    enter the mockup-accounting matrix.

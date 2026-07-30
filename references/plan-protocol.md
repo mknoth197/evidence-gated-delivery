@@ -31,9 +31,9 @@ contract checks stay separable from environment reads.
   the write-once activation receipt before the manifest replacement, a retry reuses that receipt's
   exact event ID and timestamp after verifying all stable workflow-identity and legacy-manifest
   bindings; it never
-  invents conflicting activation evidence. Current receipts bind goal and mode. Authenticated
-  legacy receipts written before the schema version remain valid under their original field set;
-  they are never rewritten or silently upgraded.
+  invents conflicting activation evidence. Current and transitional receipts bind goal and mode.
+  Identity-unbound legacy receipts are explicitly quarantined and require an authenticated upgrade;
+  they are never silently accepted, rewritten, or rebound.
 
 ## Canonical issue body
 

@@ -268,6 +268,12 @@ class EventAndMigrationTests(unittest.TestCase):
         self.assertEqual(second["previous_event_sha256"], first["event_sha256"])
         self.assertEqual(protocol.validate_plan_events(events), [])
 
+    def test_activation_receipt_schema_rejects_non_objects(self):
+        for value in ([], "receipt", 1, None):
+            with self.subTest(value=value):
+                with self.assertRaises(protocol.PlanProtocolError):
+                    protocol.activation_receipt_binds_workflow_identity(value)
+
     def test_activation_receipt_schema_compatibility_and_identity_binding(self):
         manifest = {
             "run_id": "activation-schema-compatibility",
@@ -304,17 +310,38 @@ class EventAndMigrationTests(unittest.TestCase):
         )
 
         path = protocol.protocol_activation_receipt_path(manifest["run_id"])
-        legacy_payload = {
+        transitional_payload = {
             key: value
             for key, value in receipt.items()
-            if key not in {"receipt_sha256", "receipt_version", "mode", "goal"}
+            if key not in {"receipt_sha256", "receipt_version"}
+        }
+        transitional = {
+            **transitional_payload,
+            "receipt_sha256": protocol.sha256_json(transitional_payload),
+        }
+        path.write_text(json.dumps(transitional))
+        self.assertEqual(
+            protocol.validate_protocol_activation_receipt(manifest), (True, [])
+        )
+        self.assertTrue(
+            any(
+                "goal mismatch" in error
+                for error in protocol.validate_protocol_activation_receipt(changed)[1]
+            )
+        )
+
+        legacy_payload = {
+            key: value
+            for key, value in transitional.items()
+            if key not in {"receipt_sha256", "mode", "goal"}
         }
         legacy = {
             **legacy_payload,
             "receipt_sha256": protocol.sha256_json(legacy_payload),
         }
         path.write_text(json.dumps(legacy))
-        self.assertEqual(protocol.validate_protocol_activation_receipt(manifest), (True, []))
+        legacy_errors = protocol.validate_protocol_activation_receipt(manifest)[1]
+        self.assertTrue(any("quarantined" in error for error in legacy_errors))
 
     def test_mutation_and_duplicate_event_are_rejected(self):
         events: list[dict] = []

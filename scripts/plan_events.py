@@ -11,7 +11,8 @@ from typing import Any
 from plan_protocol_core import (
     ACTIVATION_RECEIPT_V2, ALLOWED_EVENT_TYPES, PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2,
     WORKFLOW_VERSION_V2, ZERO_HASH, PlanProtocolError, canonical_json,
-    effective_protocol_version, record_protocol_activation, sha256_json,
+    activation_receipt_binds_workflow_identity, effective_protocol_version,
+    record_protocol_activation, sha256_json,
     protocol_activation_receipt_path, validate_protocol_activation_receipt,
     validate_protocol_version,
 )
@@ -141,6 +142,14 @@ def migrate_manifest_to_v2(
                 raise PlanProtocolError(
                     "stranded v2 activation receipt is unreadable"
                 ) from exc
+            binds_workflow_identity = activation_receipt_binds_workflow_identity(
+                existing
+            )
+            if not binds_workflow_identity:
+                raise PlanProtocolError(
+                    "legacy stranded activation receipt is quarantined; "
+                    "authenticated workflow-identity upgrade required"
+                )
             stable_bindings = [
                 "run_id",
                 "parent_thread_id",
@@ -148,11 +157,7 @@ def migrate_manifest_to_v2(
                 "starting_commit",
                 "run_started_at",
             ]
-            if (
-                existing.get("receipt_version") == ACTIVATION_RECEIPT_V2
-                or ("mode" in existing and "goal" in existing)
-            ):
-                stable_bindings.extend(("mode", "goal"))
+            stable_bindings.extend(("mode", "goal"))
             if not isinstance(existing, dict) or any(
                 existing.get(field) != migrated.get(field)
                 for field in stable_bindings

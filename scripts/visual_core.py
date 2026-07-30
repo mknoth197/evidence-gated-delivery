@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import struct
+import zlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -125,7 +127,8 @@ def _inferred_kind_group(entry: dict[str, Any]) -> str | None:
         r"product illustration|illustrations?|icon set|brand asset|social card|"
         r"poster|thumbnail|company logo|logos?|cover artwork|artwork|"
         r"product photograph|photographs?|photos?|photography|graphics?|"
-        r"visual asset|brand identity|avatars?|animations?)\b",
+        r"visual asset|brand identity|avatars?|animations?|infographics?|"
+        r"technical diagram|emoji pack)\b",
         text,
     ):
         return "generative"
@@ -168,6 +171,81 @@ def _declared_kind_group(kind: Any) -> str | None:
     if kind in GENERATIVE_KINDS:
         return "generative"
     return None
+
+
+def _valid_png(data: bytes) -> bool:
+    """Strictly parse a non-interlaced PNG and its decompressed scanlines."""
+
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    offset = 8
+    width = height = bit_depth = color_type = None
+    compressed = bytearray()
+    saw_iend = False
+    while offset + 12 <= len(data):
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        chunk_type = data[offset + 4 : offset + 8]
+        end = offset + 12 + length
+        if end > len(data):
+            return False
+        payload = data[offset + 8 : offset + 8 + length]
+        expected_crc = struct.unpack(">I", data[offset + 8 + length : end])[0]
+        if zlib.crc32(chunk_type + payload) & 0xFFFFFFFF != expected_crc:
+            return False
+        if chunk_type == b"IHDR":
+            if offset != 8 or length != 13:
+                return False
+            (
+                width,
+                height,
+                bit_depth,
+                color_type,
+                compression,
+                filtering,
+                interlace,
+            ) = struct.unpack(">IIBBBBB", payload)
+            if (
+                width < 1
+                or height < 1
+                or compression != 0
+                or filtering != 0
+                or interlace != 0
+            ):
+                return False
+        elif chunk_type == b"IDAT":
+            compressed.extend(payload)
+        elif chunk_type == b"IEND":
+            if length != 0 or end != len(data):
+                return False
+            saw_iend = True
+            break
+        offset = end
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
+    allowed_depths = {
+        0: {1, 2, 4, 8, 16},
+        2: {8, 16},
+        3: {1, 2, 4, 8},
+        4: {8, 16},
+        6: {8, 16},
+    }
+    if (
+        not saw_iend
+        or channels is None
+        or bit_depth not in allowed_depths.get(color_type, set())
+        or not compressed
+    ):
+        return False
+    try:
+        scanlines = zlib.decompress(bytes(compressed))
+    except zlib.error:
+        return False
+    row_bytes = (int(width) * channels * int(bit_depth) + 7) // 8
+    if len(scanlines) != int(height) * (row_bytes + 1):
+        return False
+    return all(
+        scanlines[row * (row_bytes + 1)] in range(5)
+        for row in range(int(height))
+    )
 
 
 def runtime_evidence_sufficient(
@@ -219,20 +297,11 @@ def runtime_evidence_sufficient(
         if hashlib.sha256(artifact_bytes).hexdigest() != artifact_hash:
             continue
         kind = item.get("kind")
-        if kind in {"screenshot", "visual_regression"} and not (
-            artifact_bytes.startswith(b"\x89PNG\r\n\x1a\n")
-            or artifact_bytes.startswith(b"\xff\xd8\xff")
-            or artifact_bytes.startswith((b"GIF87a", b"GIF89a"))
-            or (
-                artifact_bytes.startswith(b"RIFF")
-                and artifact_bytes[8:12] == b"WEBP"
-            )
+        if kind in {"screenshot", "visual_regression"} and not _valid_png(
+            artifact_bytes
         ):
             continue
-        if kind == "runtime_recording" and not (
-            artifact_bytes.startswith(b"\x1aE\xdf\xa3")
-            or b"ftyp" in artifact_bytes[:32]
-        ):
+        if kind == "runtime_recording":
             continue
         if kind == "dom_accessibility":
             try:
@@ -262,6 +331,22 @@ def _intent_group(text: str) -> str:
     inferred = _inferred_kind_group({"source": text})
     if inferred in {"generative", "runtime"}:
         return inferred
+    intent_clause = re.split(
+        r"(?i)\b(?:affected modules|requirements|verification|complete when):",
+        lowered,
+        maxsplit=1,
+    )[0]
+    if re.search(
+        r"\b(?:create|design|generate|produce|render|draw|illustrate|photograph)\b",
+        intent_clause,
+    ) and not re.search(
+        r"\b(?:validator|verifier|workflow|automation|test|fixture|documentation|"
+        r"readme|api|endpoint|service|function|method|script|tool|library|cli|"
+        r"backend|migration|schema|contract|parser|serializer|manifest|receipt|"
+        r"event|check|gate|policy|rule|configuration|integration|logic|handler)\b",
+        intent_clause,
+    ):
+        return "ambiguous"
     if re.search(
         r"\b(visual[- ]applicability|evidence[_ -]mode|generative_mockup|"
         r"classif(?:y|ication)|selects? (?:the )?(?:visual|runtime|generative))\b",

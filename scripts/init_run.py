@@ -23,6 +23,7 @@ from plan_protocol import (
     WORKFLOW_VERSION_V2,
     PlanProtocolError,
     append_plan_event,
+    activation_receipt_binds_workflow_identity,
     protocol_activation_receipt_path,
     record_protocol_activation,
 )
@@ -92,6 +93,14 @@ def main() -> int:
             stranded = json.loads(activation_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise PlanProtocolError("stranded initialization receipt is unreadable") from exc
+        binds_workflow_identity = activation_receipt_binds_workflow_identity(
+            stranded
+        )
+        if not binds_workflow_identity:
+            raise PlanProtocolError(
+                "legacy stranded activation receipt is quarantined; "
+                "authenticated workflow-identity upgrade required"
+            )
         stable_bindings = {
             "run_id": run_id,
             "parent_thread_id": parent_thread_id,
@@ -102,12 +111,6 @@ def main() -> int:
             "workflow_version": WORKFLOW_VERSION_V2,
             "plan_protocol_version": PLAN_PROTOCOL_V2,
         }
-        if not (
-            stranded.get("receipt_version") == ACTIVATION_RECEIPT_V2
-            or ("mode" in stranded and "goal" in stranded)
-        ):
-            stable_bindings.pop("mode")
-            stable_bindings.pop("goal")
         if not isinstance(stranded, dict) or any(
             stranded.get(field) != value for field, value in stable_bindings.items()
         ):

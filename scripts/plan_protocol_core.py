@@ -102,6 +102,21 @@ def protocol_activation_receipt_path(run_id: str) -> Path:
     return codex_home / "evidence-gated-delivery" / "protocol-activations" / name
 
 
+def activation_receipt_binds_workflow_identity(receipt: Any) -> bool:
+    """Validate the receipt schema and report whether goal/mode are bound."""
+
+    if not isinstance(receipt, dict):
+        raise PlanProtocolError("v2 activation receipt must be an object")
+    receipt_version = receipt.get("receipt_version")
+    if receipt_version not in (None, ACTIVATION_RECEIPT_V2):
+        raise PlanProtocolError("v2 activation receipt version is unsupported")
+    has_mode = "mode" in receipt
+    has_goal = "goal" in receipt
+    if has_mode != has_goal:
+        raise PlanProtocolError("v2 activation receipt workflow identity is incomplete")
+    return receipt_version == ACTIVATION_RECEIPT_V2 or (has_mode and has_goal)
+
+
 def record_protocol_activation(
     manifest: dict[str, Any], event: dict[str, Any]
 ) -> dict[str, Any]:
@@ -134,15 +149,11 @@ def record_protocol_activation(
             existing = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise PlanProtocolError("v2 activation receipt is unreadable") from exc
-        legacy_payload = {
-            key: value
-            for key, value in payload.items()
-            if key not in {"receipt_version", "mode", "goal"}
-        }
-        legacy_receipt = {
-            **legacy_payload,
-            "receipt_sha256": sha256_json(legacy_payload),
-        }
+        if not activation_receipt_binds_workflow_identity(existing):
+            raise PlanProtocolError(
+                "legacy v2 activation receipt is quarantined; "
+                "authenticated workflow-identity upgrade required"
+            )
         transitional_payload = {
             key: value for key, value in payload.items() if key != "receipt_version"
         }
@@ -150,8 +161,6 @@ def record_protocol_activation(
             **transitional_payload,
             "receipt_sha256": sha256_json(transitional_payload),
         }
-        if existing == legacy_receipt:
-            return existing
         if existing == transitional_receipt:
             return existing
         if existing != receipt:
@@ -213,16 +222,16 @@ def validate_protocol_activation_receipt(
     errors: list[str] = []
     if claimed != sha256_json(payload):
         errors.append("external v2 activation receipt hash mismatch")
-    receipt_version = receipt.get("receipt_version")
-    if receipt_version not in (None, ACTIVATION_RECEIPT_V2):
-        errors.append("external v2 activation receipt version is unsupported")
-    transitional_identity = (
-        receipt_version is None
-        and "mode" in receipt
-        and "goal" in receipt
-    )
-    if receipt_version is None and (("mode" in receipt) != ("goal" in receipt)):
-        errors.append("external v2 activation receipt workflow identity is incomplete")
+    try:
+        binds_workflow_identity = activation_receipt_binds_workflow_identity(receipt)
+    except PlanProtocolError as exc:
+        errors.append(str(exc).replace("v2 activation", "external v2 activation"))
+        binds_workflow_identity = False
+    if not binds_workflow_identity:
+        errors.append(
+            "legacy external v2 activation receipt is quarantined; "
+            "authenticated workflow-identity upgrade required"
+        )
     bindings = [
         "run_id",
         "parent_thread_id",
@@ -232,7 +241,7 @@ def validate_protocol_activation_receipt(
         "workflow_version",
         "plan_protocol_version",
     ]
-    if receipt_version == ACTIVATION_RECEIPT_V2 or transitional_identity:
+    if binds_workflow_identity:
         bindings.extend(("mode", "goal"))
     for field in bindings:
         expected = manifest.get(field)

@@ -148,8 +148,9 @@ the mutable manifest/event chain. Validation recovers it by exact run ID or auth
 thread alone, then compares every other binding; identity substitution or restored legacy fields
 therefore fail even if migration events are removed. A v2 manifest without its authenticated
 external receipt, or without the receipt-bound activation event, fails closed.
-Receipts created before activation schema versioning remain valid against their authenticated
-legacy field set; new receipts additionally bind goal and mode and cannot be rebound.
+Unversioned transitional receipts that already contain goal and mode remain valid and cannot be
+rebound. Older identity-unbound receipts are explicitly quarantined pending an authenticated
+workflow-identity upgrade.
 
 `plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
 only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability
@@ -173,7 +174,8 @@ an allowed capture kind, timezone-aware capture timestamp, bounded evidence text
 artifact path, and a lowercase SHA-256 matching those artifact bytes. Sufficiency defaults false
 and is recomputed per scope entry from authoritative evidence; unreadable, digest-mismatched,
 content-type-mismatched, or stale evidence cannot satisfy the gate. Embedded sufficiency values
-are never validation authority.
+are never validation authority. Screenshot and visual-regression evidence currently requires a
+strictly parsed non-interlaced PNG; unsupported recording containers fail closed.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

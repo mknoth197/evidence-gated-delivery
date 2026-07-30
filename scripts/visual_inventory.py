@@ -150,6 +150,8 @@ def extract_scope_inventory(
             task_group = "generative"
         elif intent_group == "runtime":
             task_group = "runtime"
+        elif intent_group == "ambiguous":
+            task_group = "ambiguous"
         elif "runtime" in module_groups:
             task_group = (
                 "runtime"
@@ -164,6 +166,8 @@ def extract_scope_inventory(
                     if task_group == "generative"
                     else "existing_component_state"
                     if task_group == "runtime"
+                    else "ambiguous_visual_intent"
+                    if task_group == "ambiguous"
                     else "nonvisual"
                 ),
                 "source": source.strip(),
@@ -213,6 +217,12 @@ def extract_scope_inventory(
     overall_group = (
         "generative"
         if deliverable_group == "generative" or "generative" in task_groups
+        else "ambiguous"
+        if deliverable_group == "ambiguous"
+        or any(
+            entry.get("kind") == "ambiguous_visual_intent"
+            for entry in task_entries
+        )
         else "runtime"
         if deliverable_group == "runtime"
         or "runtime" in task_groups
@@ -234,6 +244,8 @@ def extract_scope_inventory(
             kind = "new_visual_concept"
         elif source_group == "runtime":
             kind = "existing_component_state"
+        elif source_group == "ambiguous":
+            kind = "ambiguous_visual_intent"
         acceptance_entries.append(
             {
                 "id": value,
@@ -263,6 +275,8 @@ def extract_scope_inventory(
                     if overall_group == "generative"
                     else "existing_component_state"
                     if overall_group == "runtime"
+                    else "ambiguous_visual_intent"
+                    if overall_group == "ambiguous"
                     else "nonvisual"
                 ),
                 "source": deliverable_source,

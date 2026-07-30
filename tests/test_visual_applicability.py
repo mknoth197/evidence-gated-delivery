@@ -3,8 +3,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import struct
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,23 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC and SPEC.loader
 visual = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(visual)
+
+
+def png_bytes() -> bytes:
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
+        + chunk(b"IEND", b"")
+    )
 
 
 def entry(identifier: str, kind: str = "nonvisual", **extra):
@@ -535,7 +554,7 @@ Adjust an existing component state.
 """
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory) / "panel.png"
-            artifact.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 32)
+            artifact.write_bytes(png_bytes())
             runtime_evidence = [
                 {
                     "kind": "screenshot",
@@ -595,7 +614,7 @@ Adjust an existing component state.
         )
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory) / "panel.png"
-            artifact.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 32)
+            artifact.write_bytes(png_bytes())
             valid = dict(
                 base,
                 artifact_path=str(artifact),
@@ -617,6 +636,18 @@ Adjust an existing component state.
             )
             self.assertFalse(
                 visual.runtime_evidence_sufficient("T-001", [forged_type])
+            )
+            header_only = Path(directory) / "header-only.png"
+            header_only.write_bytes(b"\x89PNG\r\n\x1a\nTHIS IS NOT A PNG")
+            forged_png = dict(
+                valid,
+                artifact_path=str(header_only),
+                artifact_sha256=hashlib.sha256(
+                    header_only.read_bytes()
+                ).hexdigest(),
+            )
+            self.assertFalse(
+                visual.runtime_evidence_sufficient("T-001", [forged_png])
             )
             naive = dict(valid, captured_at="2026-07-29T12:00:00")
             self.assertFalse(
@@ -698,6 +729,9 @@ Create a marketing asset and hero image while recording visual-applicability.
             ("company logo", "scripts/generate_asset.py"),
             ("cover artwork", "scripts/generate_asset.py"),
             ("product photograph", "scripts/generate_asset.py"),
+            ("infographic", "scripts/generate_asset.py"),
+            ("technical diagram", "scripts/generate_asset.py"),
+            ("emoji pack", "scripts/generate_asset.py"),
         ):
             with self.subTest(deliverable=deliverable):
                 body = f"""# Plan
@@ -727,6 +761,34 @@ Create a {deliverable} while recording visual-applicability.
                 self.assertEqual(
                     receipt["evidence_mode"], "generative_mockup"
                 )
+
+    def test_unknown_created_deliverable_blocks_instead_of_defaulting_none(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Create a launch badge collection.
+
+## Tasks
+- [ ] **T-001 — Create launch badge collection.** Objective: create the requested deliverable. Context: launch. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL provide the launch badge collection. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Use the workflow's visual policy."]
+        )
+        self.assertEqual(errors, [])
+        receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(receipt["decision"], visual.BLOCKED_DECISION)
+        self.assertIsNone(receipt["evidence_mode"])
 
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan
