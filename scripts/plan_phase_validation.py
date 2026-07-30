@@ -547,6 +547,11 @@ def add_plan_errors(
             "implement": "implement_completed_at",
             "review": "review_completed_at",
         }.get(visual_phase)
+        phase_timeline = (
+            data["phase_timeline"]
+            if isinstance(data.get("phase_timeline"), dict)
+            else {}
+        )
         validated_mode, _inventory, disposition_errors = deps.validate_disposition(
             disposition,
             implementation_body,
@@ -558,7 +563,7 @@ def add_plan_errors(
             authoritative_runtime_evidence=data.get("runtime_visual_evidence"),
             runtime_evidence_not_before=data.get("run_started_at"),
             runtime_evidence_not_after=(
-                data.get("phase_timeline", {}).get(runtime_upper_field)
+                phase_timeline.get(runtime_upper_field)
                 if runtime_upper_field
                 else None
             ),

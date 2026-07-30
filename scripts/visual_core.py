@@ -95,7 +95,8 @@ NONVISUAL_OBJECT_HEAD = re.compile(
     r"handlers?|behaviors?|states?|support|mechanisms?|capabilities?|"
     r"protocols?|markers?|records?|adapters?|modules?|packages?|"
     r"dependencies|types?|fields?|commands?|jobs?|settings?|prompts?|"
-    r"skills?|reliability|planning|implementation|validation)\b\s*$"
+    r"skills?|reliability|performance|latency|authentication|planning|"
+    r"implementation|validation|results?|outputs?)\b\s*$"
 )
 
 
@@ -293,7 +294,8 @@ def _intent_group(text: str) -> str:
         r"(?:^\s*(?:create|design|generate|produce|render|draw|illustrate|"
         r"photograph|build|make|craft|compose|fashion|forge|fabricate|"
         r"construct|prepare|provide|deliver|publish|emit)|"
-        r"\bshall\s+(?:provide|deliver|publish|emit))"
+        r"\bshall\s+(?:provide|deliver|publish|emit|display|show|create|render|"
+        r"export|return))"
         r"\s+(?:(?:an?|the|new|requested)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
@@ -303,7 +305,7 @@ def _intent_group(text: str) -> str:
         if not NONVISUAL_OBJECT_HEAD.search(created_object):
             return "ambiguous"
     leading_action = re.match(
-        r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the)\s+)"
+        r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
     )
