@@ -395,15 +395,6 @@ def _intent_group(text: str) -> str:
         return "nonvisual"
     if _is_complete_nonvisual_ears_statement(lowered):
         return "nonvisual"
-    if any(
-        re.match(pattern, lowered)
-        for pattern in (
-            r"^\s*implement visual-applicability/v1\.\s+objective:",
-            r"^\s*implement stable task parsing and graph-policy/v1\.\s+objective:",
-            r"^\s*bundle collision-safe plan-to-graph\.\s+objective:",
-        )
-    ):
-        return "nonvisual"
     inferred = _inferred_kind_group({"source": text})
     if inferred in {"generative", "runtime"}:
         return inferred

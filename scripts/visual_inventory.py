@@ -20,6 +20,38 @@ from visual_core import (
     runtime_evidence_sufficient,
 )
 
+NONVISUAL_POLICY_TASK_OBJECTIVES = {
+    "implement stable task parsing and graph-policy/v1": (
+        "deterministically parse task count, explicit dependency edges, and owner lanes "
+        "from the authoritative issue"
+    ),
+    "bundle collision-safe plan-to-graph": (
+        "draft and execute the protected github graph transaction"
+    ),
+    "implement visual-applicability/v1": (
+        "prevent imagegen, screenshot, publication, and visual-review work when the "
+        "scoped deliverable does not need that evidence"
+    ),
+}
+VISUAL_OUTPUT_ACTION = re.compile(
+    r"\b(?:assemble|create|deliver|design|display|draw|expose|generate|illustrate|"
+    r"make|present|produce|provide|publish|render|show)\b",
+    re.IGNORECASE,
+)
+
+
+def _canonical_policy_task_is_nonvisual(record: dict[str, Any]) -> bool:
+    title = str(record.get("title", "")).strip().lower()
+    objective = str(record.get("objective", "")).strip().lower()
+    if NONVISUAL_POLICY_TASK_OBJECTIVES.get(title) != objective:
+        return False
+    remaining = " ".join(
+        str(record.get(field, ""))
+        for field in ("context", "requirements", "verification", "complete_when")
+    )
+    return VISUAL_OUTPUT_ACTION.search(remaining) is None
+
+
 def extract_scope_inventory(
     body: str,
     *,
@@ -59,6 +91,12 @@ def extract_scope_inventory(
                 "source": task["body"],
                 "task_id": task["task_id"],
                 "affected_modules": task["affected_modules"],
+                "title": task["title"],
+                "objective": task["objective"],
+                "context": task["context"],
+                "requirements": task["requirements"],
+                "verification": task["verification"],
+                "complete_when": task["complete_when"],
             }
             for task in canonical_tasks
         ]
@@ -156,7 +194,12 @@ def extract_scope_inventory(
                 if intent_match is None
                 else re.sub(r"[*`]", "", intent_match.group(0))
             )
-        intent_group = _intent_group(task_intent)
+        intent_group = (
+            "nonvisual"
+            if canonical_tasks is not None
+            and _canonical_policy_task_is_nonvisual(record)
+            else _intent_group(task_intent)
+        )
         if intent_group == "generative":
             task_group = "generative"
         elif intent_group == "runtime":
