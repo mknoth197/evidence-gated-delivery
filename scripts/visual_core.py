@@ -118,43 +118,67 @@ NONVISUAL_OBJECT_PHRASE_VERBS = frozenset(
         "verify",
     }
 )
-NONVISUAL_SYSTEM_VERBS = frozenset(
-    {
-        "authenticate",
-        "block",
-        "canonicalize",
-        "classify",
-        "continue",
-        "cross-check",
-        "default",
-        "enter",
-        "exclude",
-        "fail",
-        "include",
-        "invalidate",
-        "normalize",
-        "parse",
-        "prevent",
-        "prohibit",
-        "recompute",
-        "record",
-        "require",
-        "resume",
-        "reuse",
-        "select",
-        "stop",
-        "use",
-        "verify",
-    }
-)
 VISUAL_POLICY_TOKEN = re.compile(
-    r"\b(?:visual-applicability/v1|visual_required|visual_not_applicable|"
+    r"\b(?:visual[- ]applicability(?:/v1)?|visual_required|visual_not_applicable|"
     r"runtime_capture|generative_mockup|blocked_pending_visual_clarification)\b"
 )
-VISUAL_POLICY_ACTION = re.compile(
-    r"\b(?:classif(?:y|ies)|selects?|recomputes?|evaluates?|normalizes?|"
-    r"enters?|blocks?|requires?|omits?|verifies?|defaults?)\b"
-)
+
+
+def _is_visual_policy_statement(text: str) -> bool:
+    if not VISUAL_POLICY_TOKEN.search(text):
+        return False
+    subject = r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
+    return any(
+        re.search(subject + predicate, text)
+        for predicate in (
+            r"classify\s+(?:the\s+)?(?:run|plan|workflow|mode|disposition)\b",
+            r"select\s+(?:`?(?:runtime_capture|generative_mockup)`?)\b",
+            r"recompute\s+(?:`?visual[- ]applicability(?:/v1)?`?)\b",
+            r"evaluate\s+(?:scoped\s+)?visual\s+(?:directions?|triggers?|applicability)\b",
+            r"normalize\s+(?:their|the)\s+(?:authority|scope|source order)\b",
+            r"enter\s+`?blocked_pending_visual_clarification`?\b",
+            r"default\s+to\s+`?visual_not_applicable`?\b",
+            r"block\s+(?:for clarification|rather than emit\s+`?visual_not_applicable`?)\b",
+            r"require\s+(?:empty contestant-image and final-image receipts|"
+            r"current runtime, dom/accessibility, or visual-regression evidence)\b",
+            r"omit\s+(?:mockup publication|imagegen-specific gates)\b",
+            r"verify\s+complete positive nonvisual coverage\b",
+            r"preserve\s+all screenshot grounding\b",
+        )
+    )
+
+
+def _is_nonvisual_system_statement(text: str) -> bool:
+    subject = r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
+    return any(
+        re.search(subject + predicate, text)
+        for predicate in (
+            r"prevent\s+final plan validation\b",
+            r"require\s+(?:either a verified patch|its hash|a fresh independent recheck)\b",
+            r"authenticate\s+a fresh auditor session\b",
+            r"canonicalize\s+its body\b",
+            r"invalidate\s+the audit\b",
+            r"parse\s+stable task ids\b",
+            r"emit\s+(?:deterministic structural findings|a recomputed `?no_graph`? receipt)\b",
+            r"classify\s+the plan as `?graph_required`?\b",
+            r"prohibit\s+child-issue and relationship mutations\b",
+            r"use\s+the implementation issue as parent\b",
+            r"reuse\s+exact matches\b",
+            r"stop\s+without creating, editing, or deleting remote artifacts\b",
+            r"verify\s+every child identity\b",
+            r"continue\s+to report the plan as not `?valid`?\b",
+            r"include\s+the bundled `?plan-auditor`? and `?plan-to-graph`? skills\b",
+            r"cross-check\s+the parent delegation event\b",
+            r"exclude\s+secrets, private prompts, pii\b",
+            r"enter\s+`?blocked`?\b",
+            r"record\s+immutable `?plan_protocol_version\b",
+            r"fail\s+closed\b",
+            r"normalize\s+their authority, scope, and source order\b",
+            r"use\s+the newer direction\b",
+            r"use\s+that unrelated frontend as evidence\b",
+            r"record\s+the copy-versus-reimplementation decision\b",
+        )
+    )
 
 
 def canonical_sha256(value: Any) -> str:
@@ -193,6 +217,7 @@ def _inferred_kind_group(entry: dict[str, Any]) -> str | None:
     if re.search(
         r"\b(new[ _.-]?screen|new page|new component|new visual concept|redesign|"
         r"marketing asset|generated (?:web )?asset|landing page|hero image|"
+        r"visual mockups?|mockups?|mood boards?|visual reports?|"
         r"product illustration|illustrations?|icon set|brand asset|social card|"
         r"poster|thumbnail|company logo|logos?|cover artwork|artwork|"
         r"product photograph|photographs?|photos?|photography|graphics?|"
@@ -203,7 +228,7 @@ def _inferred_kind_group(entry: dict[str, Any]) -> str | None:
     ):
         return "generative"
     if re.search(
-        r"\b(aria|focus behavior|css regression|ui copy|existing component|"
+        r"\b(aria|focus behavior|css regression|ui copy|screenshots?|existing component|"
         r"existing visual|responsive|visual accessibility|user-visible interface)\b",
         text,
     ):
@@ -339,23 +364,17 @@ def _intent_group(text: str) -> str:
     lowered = text.lower()
     if not lowered.strip():
         return "nonvisual"
-    policy_subject = re.search(
-        r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
-        r"(?:classify|select|recompute|evaluate|normalize|enter|block|require|"
-        r"omit|verify|default)\b",
-        lowered,
-    )
-    if (
-        VISUAL_POLICY_TOKEN.search(lowered)
-        and VISUAL_POLICY_ACTION.search(lowered)
-        and policy_subject
-    ):
+    if _is_visual_policy_statement(lowered):
         return "nonvisual"
-    if re.search(
-        r"\b(?:implement|bundle|validate|recompute|record|integrate|test)\b"
-        r"[^.;:]{0,100}\b(?:visual-applicability/v1|graph-policy/v1|"
-        r"plan-to-graph)\b",
-        lowered,
+    if _is_nonvisual_system_statement(lowered):
+        return "nonvisual"
+    if any(
+        re.search(pattern, lowered)
+        for pattern in (
+            r"\bimplement\s+visual-applicability/v1\b",
+            r"\bimplement\s+stable task parsing and graph-policy/v1\b",
+            r"\bbundle\s+collision-safe plan-to-graph\b",
+        )
     ):
         return "nonvisual"
     inferred = _inferred_kind_group({"source": text})
@@ -378,11 +397,6 @@ def _intent_group(text: str) -> str:
     if creation:
         action = creation.group("leading_verb") or creation.group("ears_verb")
         created_object = creation.group("object").strip()
-        if (
-            action in NONVISUAL_SYSTEM_VERBS
-            and re.search(r"\b(?:system|validator)\s+shall\b", intent_clause)
-        ):
-            return "nonvisual"
         if (
             action == "emit"
             and re.search(

@@ -289,13 +289,18 @@ Create a marketing asset and hero image while recording visual-applicability.
         self.assertEqual(receipt["evidence_mode"], "generative_mockup")
 
     def test_policy_enum_cannot_mask_visual_deliverable_outside_policy_predicate(self):
-        body = """# Plan
+        for problem in (
+            "Create a hero image and classify its workflow as VISUAL_REQUIRED.",
+            "Implement a hero image using visual-applicability/v1.",
+        ):
+            with self.subTest(problem=problem):
+                body = f"""# Plan
 
 `D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
 `M-001` through `M-001`
 
 ## Problem Statement
-Create a hero image and classify its workflow as VISUAL_REQUIRED.
+{problem}
 
 ## Tasks
 - [ ] **T-001 — Create hero image.** Objective: create the asset. Context: launch. Affected modules: `web/hero-image.png`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: web. `depends_on: []`.
@@ -303,18 +308,54 @@ Create a hero image and classify its workflow as VISUAL_REQUIRED.
 ## Acceptance Criteria
 - WHEN complete, THE SYSTEM SHALL provide the hero image. <!-- AC-001 -->
 """
-        inventory, errors = visual.build_plan_inventory(
-            body, user_directions=["Use the visual policy."]
-        )
-        self.assertEqual(errors, [])
-        receipt = visual.evaluate_visual_applicability(
-            inventory,
-            phase="plan",
-            authoritative_issue_body=body,
-            declared_ids=declarations(inventory),
-        )
-        self.assertEqual(receipt["decision"], "VISUAL_REQUIRED")
-        self.assertEqual(receipt["evidence_mode"], "generative_mockup")
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the visual policy."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertEqual(receipt["decision"], "VISUAL_REQUIRED")
+                self.assertEqual(receipt["evidence_mode"], "generative_mockup")
+
+    def test_policy_actions_cannot_mask_visual_objects(self):
+        for verb, deliverable, expected_mode in (
+            ("require", "a visual mockup", "generative_mockup"),
+            ("require", "a screenshot", "generative_mockup"),
+            ("require", "a visual report", "generative_mockup"),
+            ("include", "a mood board as the requested deliverable", "generative_mockup"),
+            ("classify", "a hero image as VISUAL_REQUIRED", "generative_mockup"),
+        ):
+            with self.subTest(verb=verb, deliverable=deliverable):
+                body = f"""# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Implement a workflow policy.
+
+## Tasks
+- [ ] **T-001 — Implement policy.** Objective: implement it. Context: workflow. Affected modules: `scripts/policy.py`. Requirements: enforce it. Verification: test it. Complete when green. Owner lane: core. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL {verb} {deliverable}. <!-- AC-001 -->
+"""
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the visual policy."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertEqual(receipt["decision"], "VISUAL_REQUIRED")
+                self.assertEqual(receipt["evidence_mode"], expected_mode)
 
     def test_broader_visual_deliverables_cannot_fall_through_to_nonvisual(self):
         for deliverable, path in (
