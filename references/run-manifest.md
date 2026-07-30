@@ -175,7 +175,8 @@ artifact path, and a lowercase SHA-256 matching those artifact bytes. Sufficienc
 and is recomputed per scope entry from authoritative evidence; unreadable, digest-mismatched,
 content-type-mismatched, or stale evidence cannot satisfy the gate. Embedded sufficiency values
 are never validation authority. Screenshot and visual-regression evidence currently requires a
-strictly parsed non-interlaced PNG; unsupported recording containers fail closed.
+strictly parsed non-interlaced PNG with bounded compressed/decompressed size, valid critical
+chunks, CRCs, and scanlines; unsupported recording containers fail closed.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

@@ -182,6 +182,9 @@ def _valid_png(data: bytes) -> bool:
     width = height = bit_depth = color_type = None
     compressed = bytearray()
     saw_iend = False
+    saw_ihdr = False
+    saw_idat = False
+    idat_ended = False
     while offset + 12 <= len(data):
         length = struct.unpack(">I", data[offset : offset + 4])[0]
         chunk_type = data[offset + 4 : offset + 8]
@@ -193,8 +196,9 @@ def _valid_png(data: bytes) -> bool:
         if zlib.crc32(chunk_type + payload) & 0xFFFFFFFF != expected_crc:
             return False
         if chunk_type == b"IHDR":
-            if offset != 8 or length != 13:
+            if offset != 8 or length != 13 or saw_ihdr:
                 return False
+            saw_ihdr = True
             (
                 width,
                 height,
@@ -213,18 +217,28 @@ def _valid_png(data: bytes) -> bool:
             ):
                 return False
         elif chunk_type == b"IDAT":
+            if not saw_ihdr or idat_ended:
+                return False
+            saw_idat = True
+            if len(compressed) + len(payload) > 50 * 1024 * 1024:
+                return False
             compressed.extend(payload)
         elif chunk_type == b"IEND":
-            if length != 0 or end != len(data):
+            if length != 0 or end != len(data) or not saw_idat:
                 return False
             saw_iend = True
             break
+        elif chunk_type == b"PLTE":
+            return False
+        elif chunk_type and chunk_type[0] & 0x20 == 0:
+            return False
+        elif saw_idat:
+            idat_ended = True
         offset = end
-    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type)
     allowed_depths = {
         0: {1, 2, 4, 8, 16},
         2: {8, 16},
-        3: {1, 2, 4, 8},
         4: {8, 16},
         6: {8, 16},
     }
@@ -235,12 +249,23 @@ def _valid_png(data: bytes) -> bool:
         or not compressed
     ):
         return False
+    row_bytes = (int(width) * channels * int(bit_depth) + 7) // 8
+    expected_size = int(height) * (row_bytes + 1)
+    if expected_size > 100 * 1024 * 1024:
+        return False
     try:
-        scanlines = zlib.decompress(bytes(compressed))
+        decompressor = zlib.decompressobj()
+        scanlines = decompressor.decompress(
+            bytes(compressed), expected_size + 1
+        )
     except zlib.error:
         return False
-    row_bytes = (int(width) * channels * int(bit_depth) + 7) // 8
-    if len(scanlines) != int(height) * (row_bytes + 1):
+    if (
+        len(scanlines) != expected_size
+        or decompressor.unconsumed_tail
+        or decompressor.unused_data
+        or not decompressor.eof
+    ):
         return False
     return all(
         scanlines[row * (row_bytes + 1)] in range(5)
@@ -291,6 +316,8 @@ def runtime_evidence_sufficient(
         if not resolved_artifact.is_absolute() or not resolved_artifact.is_file():
             continue
         try:
+            if resolved_artifact.stat().st_size > 50 * 1024 * 1024:
+                continue
             artifact_bytes = resolved_artifact.read_bytes()
         except (OSError, ValueError):
             continue
@@ -336,17 +363,23 @@ def _intent_group(text: str) -> str:
         lowered,
         maxsplit=1,
     )[0]
-    if re.search(
-        r"\b(?:create|design|generate|produce|render|draw|illustrate|photograph)\b",
+    creation = re.search(
+        r"\b(?:create|design|generate|produce|render|draw|illustrate|photograph)"
+        r"\s+(?:(?:an?|the|new|requested)\s+)?"
+        r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
-    ) and not re.search(
-        r"\b(?:validator|verifier|workflow|automation|test|fixture|documentation|"
-        r"readme|api|endpoint|service|function|method|script|tool|library|cli|"
-        r"backend|migration|schema|contract|parser|serializer|manifest|receipt|"
-        r"event|check|gate|policy|rule|configuration|integration|logic|handler)\b",
-        intent_clause,
-    ):
-        return "ambiguous"
+    )
+    if creation:
+        created_object = creation.group("object")
+        if not re.search(
+            r"\b(?:validator|verifier|workflow|automation|test|fixture|documentation|"
+            r"readme|api|endpoint|service|function|method|script|tool|library|cli|"
+            r"backend|migration|schema|contract|parser|serializer|manifest|receipt|"
+            r"event|check|gate|policy|rule|configuration|integration|logic|handler|"
+            r"behavior|state|support|mechanism|capability|protocol)\b",
+            created_object,
+        ):
+            return "ambiguous"
     if re.search(
         r"\b(visual[- ]applicability|evidence[_ -]mode|generative_mockup|"
         r"classif(?:y|ication)|selects? (?:the )?(?:visual|runtime|generative))\b",

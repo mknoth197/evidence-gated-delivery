@@ -18,7 +18,12 @@ visual = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(visual)
 
 
-def png_bytes() -> bytes:
+def png_bytes(
+    scanlines: bytes = b"\x00\x00\x00\x00\xff",
+    *,
+    color_type: int = 6,
+    extra_chunks: tuple[tuple[bytes, bytes], ...] = (),
+) -> bytes:
     def chunk(kind: bytes, payload: bytes) -> bytes:
         return (
             struct.pack(">I", len(payload))
@@ -27,11 +32,17 @@ def png_bytes() -> bytes:
             + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
         )
 
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
-        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\xff"))
-        + chunk(b"IEND", b"")
+    return b"".join(
+        (
+            b"\x89PNG\r\n\x1a\n",
+            chunk(
+                b"IHDR",
+                struct.pack(">IIBBBBB", 1, 1, 8, color_type, 0, 0, 0),
+            ),
+            *(chunk(kind, payload) for kind, payload in extra_chunks),
+            chunk(b"IDAT", zlib.compress(scanlines)),
+            chunk(b"IEND", b""),
+        )
     )
 
 
@@ -649,6 +660,35 @@ Adjust an existing component state.
             self.assertFalse(
                 visual.runtime_evidence_sufficient("T-001", [forged_png])
             )
+            bomb = Path(directory) / "bomb.png"
+            bomb.write_bytes(png_bytes(b"\x00" * 1_000_000))
+            forged_bomb = dict(
+                valid,
+                artifact_path=str(bomb),
+                artifact_sha256=hashlib.sha256(bomb.read_bytes()).hexdigest(),
+            )
+            self.assertFalse(
+                visual.runtime_evidence_sufficient("T-001", [forged_bomb])
+            )
+            for name, content in (
+                ("indexed.png", png_bytes(b"\x00\x00", color_type=3)),
+                (
+                    "critical.png",
+                    png_bytes(extra_chunks=((b"ABCD", b""),)),
+                ),
+            ):
+                invalid_png = Path(directory) / name
+                invalid_png.write_bytes(content)
+                invalid_evidence = dict(
+                    valid,
+                    artifact_path=str(invalid_png),
+                    artifact_sha256=hashlib.sha256(content).hexdigest(),
+                )
+                self.assertFalse(
+                    visual.runtime_evidence_sufficient(
+                        "T-001", [invalid_evidence]
+                    )
+                )
             naive = dict(valid, captured_at="2026-07-29T12:00:00")
             self.assertFalse(
                 visual.runtime_evidence_sufficient(
@@ -763,32 +803,40 @@ Create a {deliverable} while recording visual-applicability.
                 )
 
     def test_unknown_created_deliverable_blocks_instead_of_defaulting_none(self):
-        body = """# Plan
+        for deliverable in (
+            "launch badge for API documentation",
+            "commemorative medallion for the service launch",
+            "printed certificate for a workflow milestone",
+        ):
+            with self.subTest(deliverable=deliverable):
+                body = f"""# Plan
 
 `D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
 `M-001` through `M-001`
 
 ## Problem Statement
-Create a launch badge collection.
+Create a {deliverable}.
 
 ## Tasks
-- [ ] **T-001 — Create launch badge collection.** Objective: create the requested deliverable. Context: launch. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
+- [ ] **T-001 — Create {deliverable}.** Objective: create the requested deliverable. Context: launch. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
 
 ## Acceptance Criteria
-- WHEN complete, THE SYSTEM SHALL provide the launch badge collection. <!-- AC-001 -->
+- WHEN complete, THE SYSTEM SHALL provide the requested deliverable. <!-- AC-001 -->
 """
-        inventory, errors = visual.build_plan_inventory(
-            body, user_directions=["Use the workflow's visual policy."]
-        )
-        self.assertEqual(errors, [])
-        receipt = visual.evaluate_visual_applicability(
-            inventory,
-            phase="plan",
-            authoritative_issue_body=body,
-            declared_ids=declarations(inventory),
-        )
-        self.assertEqual(receipt["decision"], visual.BLOCKED_DECISION)
-        self.assertIsNone(receipt["evidence_mode"])
+                inventory, errors = visual.build_plan_inventory(
+                    body, user_directions=["Use the workflow's visual policy."]
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertEqual(
+                    receipt["decision"], visual.BLOCKED_DECISION
+                )
+                self.assertIsNone(receipt["evidence_mode"])
 
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan
