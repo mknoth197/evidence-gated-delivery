@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -190,6 +190,7 @@ def runtime_evidence_sufficient(
     evidence: Any,
     *,
     not_before: str | None = None,
+    not_after: str | None = None,
 ) -> bool:
     """Prove current, scope-bound runtime evidence for one inventory entry."""
 
@@ -199,9 +200,18 @@ def runtime_evidence_sufficient(
             if isinstance(not_before, str) and not_before
             else None
         )
+        ceiling = (
+            datetime.fromisoformat(not_after.replace("Z", "+00:00"))
+            if isinstance(not_after, str) and not_after
+            else None
+        )
     except ValueError:
         return False
-    if threshold is not None and threshold.tzinfo is None:
+    if (
+        (threshold is not None and threshold.tzinfo is None)
+        or ceiling is None
+        or ceiling.tzinfo is None
+    ):
         return False
     for item in evidence if isinstance(evidence, list) else []:
         if not isinstance(item, dict):
@@ -259,7 +269,7 @@ def runtime_evidence_sufficient(
             continue
         if captured.tzinfo is None:
             continue
-        if captured > datetime.now(timezone.utc) + timedelta(minutes=5):
+        if captured > ceiling + timedelta(minutes=5):
             continue
         if threshold is not None and captured < threshold:
             continue

@@ -583,6 +583,7 @@ Adjust an existing component state.
                 user_directions=["Use current runtime evidence."],
                 runtime_evidence=runtime_evidence,
                 runtime_evidence_not_before="2026-07-29T11:00:00Z",
+                runtime_evidence_not_after="2026-07-29T12:05:00Z",
             )
             self.assertEqual(errors, [])
             self.assertTrue(
@@ -603,6 +604,7 @@ Adjust an existing component state.
             authoritative_user_directions=["Use current runtime evidence."],
             authoritative_runtime_evidence=runtime_evidence,
             runtime_evidence_not_before="2026-07-29T11:00:00Z",
+            runtime_evidence_not_after="2026-07-29T12:05:00Z",
         )
         self.assertTrue(
             any(
@@ -634,7 +636,11 @@ Adjust an existing component state.
                 ).hexdigest(),
             )
             self.assertTrue(
-                visual.runtime_evidence_sufficient("T-001", [valid])
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [valid],
+                    not_after="2026-07-29T12:05:00Z",
+                )
             )
             wrong_type = Path(directory) / "hosts.png"
             wrong_type.write_bytes(b"127.0.0.1 localhost\n")
@@ -646,7 +652,11 @@ Adjust an existing component state.
                 ).hexdigest(),
             )
             self.assertFalse(
-                visual.runtime_evidence_sufficient("T-001", [forged_type])
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [forged_type],
+                    not_after="2026-07-29T12:05:00Z",
+                )
             )
             header_only = Path(directory) / "header-only.png"
             header_only.write_bytes(b"\x89PNG\r\n\x1a\nTHIS IS NOT A PNG")
@@ -658,7 +668,11 @@ Adjust an existing component state.
                 ).hexdigest(),
             )
             self.assertFalse(
-                visual.runtime_evidence_sufficient("T-001", [forged_png])
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [forged_png],
+                    not_after="2026-07-29T12:05:00Z",
+                )
             )
             bomb = Path(directory) / "bomb.png"
             bomb.write_bytes(png_bytes(b"\x00" * 1_000_000))
@@ -668,7 +682,11 @@ Adjust an existing component state.
                 artifact_sha256=hashlib.sha256(bomb.read_bytes()).hexdigest(),
             )
             self.assertFalse(
-                visual.runtime_evidence_sufficient("T-001", [forged_bomb])
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [forged_bomb],
+                    not_after="2026-07-29T12:05:00Z",
+                )
             )
             for name, content in (
                 (
@@ -756,13 +774,17 @@ Adjust an existing component state.
                 if name == "indexed.png":
                     self.assertTrue(
                         visual.runtime_evidence_sufficient(
-                            "T-001", [invalid_evidence]
+                            "T-001",
+                            [invalid_evidence],
+                            not_after="2026-07-29T12:05:00Z",
                         )
                     )
                 else:
                     self.assertFalse(
                         visual.runtime_evidence_sufficient(
-                            "T-001", [invalid_evidence]
+                            "T-001",
+                            [invalid_evidence],
+                            not_after="2026-07-29T12:05:00Z",
                         )
                     )
             naive = dict(valid, captured_at="2026-07-29T12:00:00")
@@ -771,17 +793,41 @@ Adjust an existing component state.
                     "T-001",
                     [naive],
                     not_before="2026-07-29T11:00:00Z",
+                    not_after="2026-07-29T12:05:00Z",
                 )
             )
             future = dict(valid, captured_at="2099-01-01T00:00:00Z")
             self.assertFalse(
-                visual.runtime_evidence_sufficient("T-001", [future])
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [future],
+                    not_after="2026-07-29T12:05:00Z",
+                )
+            )
+            boundary = dict(valid, captured_at="2026-07-29T12:10:00Z")
+            self.assertTrue(
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [boundary],
+                    not_after="2026-07-29T12:05:00Z",
+                )
+            )
+            beyond_boundary = dict(
+                valid, captured_at="2026-07-29T12:10:01Z"
+            )
+            self.assertFalse(
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [beyond_boundary],
+                    not_after="2026-07-29T12:05:00Z",
+                )
             )
             self.assertFalse(
                 visual.runtime_evidence_sufficient(
                     "T-001",
                     [valid],
                     not_before="2026-07-29T11:00:00",
+                    not_after="2026-07-29T12:05:00Z",
                 )
             )
 

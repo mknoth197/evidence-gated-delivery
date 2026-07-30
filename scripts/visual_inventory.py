@@ -26,6 +26,7 @@ def extract_scope_inventory(
     user_directions: list[str] | None = None,
     runtime_evidence: list[dict[str, Any]] | None = None,
     runtime_evidence_not_before: str | None = None,
+    runtime_evidence_not_after: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Derive the Plan issue's stable inventory used by the integration gate.
 
@@ -119,6 +120,7 @@ def extract_scope_inventory(
                                 module_id,
                                 runtime_evidence,
                                 not_before=runtime_evidence_not_before,
+                                not_after=runtime_evidence_not_after,
                             )
                         }
                         if kind in RUNTIME_KINDS
@@ -179,6 +181,7 @@ def extract_scope_inventory(
                             task_id,
                             runtime_evidence,
                             not_before=runtime_evidence_not_before,
+                            not_after=runtime_evidence_not_after,
                         )
                     }
                     if task_group == "runtime"
@@ -257,6 +260,7 @@ def extract_scope_inventory(
                             value,
                             runtime_evidence,
                             not_before=runtime_evidence_not_before,
+                            not_after=runtime_evidence_not_after,
                         )
                     }
                     if kind in RUNTIME_KINDS
@@ -286,6 +290,7 @@ def extract_scope_inventory(
                             "D-001",
                             runtime_evidence,
                             not_before=runtime_evidence_not_before,
+                            not_after=runtime_evidence_not_after,
                         )
                     }
                     if overall_group == "runtime"
@@ -316,6 +321,7 @@ def build_plan_inventory(
     user_directions: list[str] | None = None,
     runtime_evidence: list[dict[str, Any]] | None = None,
     runtime_evidence_not_before: str | None = None,
+    runtime_evidence_not_after: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Build the v2 Plan inventory from canonical issue text."""
 
@@ -324,6 +330,7 @@ def build_plan_inventory(
         user_directions=user_directions,
         runtime_evidence=runtime_evidence,
         runtime_evidence_not_before=runtime_evidence_not_before,
+        runtime_evidence_not_after=runtime_evidence_not_after,
     )
     seen_paths: set[str] = set()
     planned_paths: list[dict[str, Any]] = []

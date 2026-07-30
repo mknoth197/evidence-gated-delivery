@@ -152,6 +152,10 @@ def main() -> int:
         help="ISO-8601 lower bound for current runtime evidence",
     )
     parser.add_argument(
+        "--runtime-evidence-not-after",
+        help="ISO-8601 validation-time upper bound for runtime evidence",
+    )
+    parser.add_argument(
         "--allow-host",
         action="append",
         default=[],
@@ -203,6 +207,7 @@ def main() -> int:
         authoritative_user_directions=args.user_direction,
         authoritative_runtime_evidence=runtime_evidence,
         runtime_evidence_not_before=args.runtime_evidence_not_before,
+        runtime_evidence_not_after=args.runtime_evidence_not_after,
     )
     errors.extend(disposition_errors)
     lint_receipt = None
