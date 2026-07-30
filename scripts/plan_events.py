@@ -147,6 +147,8 @@ def migrate_manifest_to_v2(
                 "repo_root",
                 "starting_commit",
                 "run_started_at",
+                "mode",
+                "goal",
             )
             if not isinstance(existing, dict) or any(
                 existing.get(field) != migrated.get(field)

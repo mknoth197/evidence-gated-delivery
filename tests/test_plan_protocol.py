@@ -411,6 +411,25 @@ class EventAndMigrationTests(unittest.TestCase):
 
 
 class AuditTests(unittest.TestCase):
+    def test_verified_fixed_requires_lineage_bound_remediation_recheck(self):
+        digest = "a" * 64
+        preliminary = audit(
+            "audit-1",
+            "preliminary",
+            digest,
+            [finding("PA-001", "High", "verified_fixed")],
+        )
+        final = audit("audit-2", "final_remote", digest, [])
+        errors = protocol.validate_plan_audits(
+            [preliminary, final], final_body_sha256=digest
+        )
+        self.assertTrue(
+            any(
+                "verified_fixed is only valid in remediation_recheck" in error
+                for error in errors
+            )
+        )
+
     def test_high_finding_requires_fresh_verified_recheck(self):
         digest = "a" * 64
         preliminary = audit(

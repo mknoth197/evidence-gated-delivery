@@ -96,6 +96,8 @@ def main() -> int:
             "parent_thread_id": parent_thread_id,
             "repo_root": str(root),
             "starting_commit": starting_commit,
+            "mode": args.mode,
+            "goal": args.goal,
             "workflow_version": WORKFLOW_VERSION_V2,
             "plan_protocol_version": PLAN_PROTOCOL_V2,
         }

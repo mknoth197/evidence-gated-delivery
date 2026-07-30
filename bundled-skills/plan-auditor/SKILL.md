@@ -85,7 +85,9 @@ clarify.” A targeted patch changes only the affected issue section and preserv
   Re-read the remote issue; do not trust a patch summary. For each finding, compare its evidence,
   patch intent, and verification implication with the newly hashed body.
 - Mark `verified_fixed` only when the exact body resolves the original failure mode without adding a
-  contradiction. Otherwise keep the finding open or emit a new stable finding.
+  contradiction, and only in that lineage-bound `remediation_recheck`. Preliminary and
+  `final_remote` receipts cannot assert `verified_fixed`. Otherwise keep the finding open or emit a
+  new stable finding.
 - A `final_remote` audit must run in another fresh session against the exact canonical remote body
   that Plan validation will consume. Any later substantive issue edit invalidates it.
 

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import init_run
-from plan_protocol import protocol_activation_receipt_path
+from plan_protocol import PlanProtocolError, protocol_activation_receipt_path
 
 
 class InitRunRecoveryTests(unittest.TestCase):
@@ -79,6 +79,24 @@ class InitRunRecoveryTests(unittest.TestCase):
                 manifest["plan_events"][0]["event_id"],
                 receipt["activation_event_id"],
             )
+            rebound_argv = [
+                "init_run.py",
+                "--mode",
+                "review",
+                "--goal",
+                "Different workflow",
+                "--repo",
+                str(repository),
+                "--run-id",
+                "recover-init",
+                "--output",
+                str(root / "rebound.json"),
+            ]
+            with patch.dict(os.environ, environment), patch.object(
+                sys, "argv", rebound_argv
+            ):
+                with self.assertRaises(PlanProtocolError):
+                    init_run.main()
 
 
 if __name__ == "__main__":

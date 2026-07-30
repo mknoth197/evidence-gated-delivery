@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -531,20 +533,26 @@ Adjust an existing component state.
 ## Acceptance Criteria
 - WHEN opened, THE SYSTEM SHALL expose the existing component state. <!-- AC-001 -->
 """
-        inventory, errors = visual.build_plan_inventory(
-            body,
-            user_directions=["Use current runtime evidence."],
-            runtime_evidence=[
-                {
-                    "kind": "screenshot",
-                    "evidence": "Current Panel state",
-                    "scope_ids": ["D-001", "T-001", "M-001", "AC-001"],
-                    "artifact_sha256": "a" * 64,
-                    "captured_at": "2026-07-29T12:00:00Z",
-                }
-            ],
-            runtime_evidence_not_before="2026-07-29T11:00:00Z",
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / "panel.png"
+            artifact.write_bytes(b"current panel")
+            inventory, errors = visual.build_plan_inventory(
+                body,
+                user_directions=["Use current runtime evidence."],
+                runtime_evidence=[
+                    {
+                        "kind": "screenshot",
+                        "evidence": "Current Panel state",
+                        "scope_ids": ["D-001", "T-001", "M-001", "AC-001"],
+                        "artifact_path": str(artifact),
+                        "artifact_sha256": hashlib.sha256(
+                            artifact.read_bytes()
+                        ).hexdigest(),
+                        "captured_at": "2026-07-29T12:00:00Z",
+                    }
+                ],
+                runtime_evidence_not_before="2026-07-29T11:00:00Z",
+            )
         self.assertEqual(errors, [])
         self.assertTrue(inventory["planned_paths"][0]["runtime_evidence_sufficient"])
         receipt = visual.evaluate_visual_applicability(
@@ -554,6 +562,46 @@ Adjust an existing component state.
             declared_ids=declarations(inventory),
         )
         self.assertEqual(receipt["evidence_mode"], "runtime_capture")
+
+    def test_runtime_evidence_requires_readable_matching_bytes_and_aware_time(self):
+        base = {
+            "kind": "screenshot",
+            "evidence": "Current Panel state",
+            "scope_ids": ["T-001"],
+            "artifact_sha256": "a" * 64,
+            "captured_at": "2026-07-29T12:00:00Z",
+        }
+        self.assertFalse(
+            visual.runtime_evidence_sufficient("T-001", [base])
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / "panel.png"
+            artifact.write_bytes(b"current panel")
+            valid = dict(
+                base,
+                artifact_path=str(artifact),
+                artifact_sha256=hashlib.sha256(
+                    artifact.read_bytes()
+                ).hexdigest(),
+            )
+            self.assertTrue(
+                visual.runtime_evidence_sufficient("T-001", [valid])
+            )
+            naive = dict(valid, captured_at="2026-07-29T12:00:00")
+            self.assertFalse(
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [naive],
+                    not_before="2026-07-29T11:00:00Z",
+                )
+            )
+            self.assertFalse(
+                visual.runtime_evidence_sufficient(
+                    "T-001",
+                    [valid],
+                    not_before="2026-07-29T11:00:00",
+                )
+            )
 
     def test_runtime_sufficiency_defaults_false_without_bound_current_evidence(self):
         body = """# Plan

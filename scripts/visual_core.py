@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 POLICY_VERSION = "visual-applicability/v1"
@@ -183,6 +184,8 @@ def runtime_evidence_sufficient(
         )
     except ValueError:
         return False
+    if threshold is not None and threshold.tzinfo is None:
+        return False
     for item in evidence if isinstance(evidence, list) else []:
         if not isinstance(item, dict):
             continue
@@ -199,20 +202,27 @@ def runtime_evidence_sufficient(
         if not isinstance(item.get("evidence"), str) or not item["evidence"].strip():
             continue
         artifact_hash = item.get("artifact_sha256") or item.get("sha256")
-        artifact_url = item.get("artifact_url")
-        if not (
-            re.fullmatch(r"[0-9a-f]{64}", str(artifact_hash))
-            or (
-                isinstance(artifact_url, str)
-                and artifact_url.startswith("https://")
-            )
-        ):
+        artifact_path = item.get("artifact_path")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(artifact_hash)):
+            continue
+        if not isinstance(artifact_path, str) or not artifact_path.strip():
+            continue
+        resolved_artifact = Path(artifact_path).expanduser()
+        if not resolved_artifact.is_absolute() or not resolved_artifact.is_file():
+            continue
+        try:
+            artifact_bytes = resolved_artifact.read_bytes()
+        except (OSError, ValueError):
+            continue
+        if hashlib.sha256(artifact_bytes).hexdigest() != artifact_hash:
             continue
         try:
             captured = datetime.fromisoformat(
                 str(item.get("captured_at", "")).replace("Z", "+00:00")
             )
         except ValueError:
+            continue
+        if captured.tzinfo is None:
             continue
         if threshold is not None and captured < threshold:
             continue

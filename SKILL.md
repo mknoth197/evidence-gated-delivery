@@ -275,9 +275,9 @@ Goal: choose and freeze what should be built.
    a neutral direction.
    Runtime sufficiency defaults false. Select `runtime_capture` only when every runtime-classified
    scope entry is covered by a current evidence record naming its scope IDs, allowed capture kind,
-   capture timestamp, bounded evidence, and a durable HTTPS artifact or SHA-256. Evidence older
-   than the run freshness bound, unscoped prose, or a bare `{kind, evidence}` assertion is
-   insufficient.
+   timezone-aware capture timestamp, bounded evidence, readable absolute local artifact path, and SHA-256
+   matching the artifact bytes. Evidence older than the run freshness bound, unscoped prose, an
+   unreadable artifact, or a bare `{kind, evidence}` assertion is insufficient.
    Capture the current authenticated product surface only when the selected mode requires it.
    An assumed shell may illustrate a research concept, but it is not eligible to be normative or to
    enter the mockup-accounting matrix.

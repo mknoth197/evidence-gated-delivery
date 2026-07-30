@@ -20,7 +20,7 @@ contract checks stay separable from environment reads.
   `protocol_migrated` event preserving the previous event-chain head and prior workflow version.
   Initialization and migration also persist a derived, write-once activation receipt under the
   caller's Codex home, keyed by `run_id` and bound to the authenticated parent thread, activation
-  event, run start, repository baseline, workflow, and protocol. Validation uses direct run lookup
+  event, run start, repository baseline, goal, mode, workflow, and protocol. Validation uses direct run lookup
   plus registry lookup anchored only on the authenticated parent thread, then compares every other
   binding. That external receipt is the
   validator-bound root outside the mutable manifest and event chain, so changing or removing the
@@ -29,7 +29,8 @@ contract checks stay separable from environment reads.
   the bound activation event in the hash chain. Migration `--dry-run` prepares and prints the
   candidate without writing either the manifest or activation registry. If an interruption leaves
   the write-once activation receipt before the manifest replacement, a retry reuses that receipt's
-  exact event ID and timestamp after verifying all stable legacy-manifest bindings; it never
+  exact event ID and timestamp after verifying all stable workflow-identity and legacy-manifest
+  bindings; it never
   invents conflicting activation evidence.
 
 ## Canonical issue body
@@ -107,8 +108,9 @@ predecessor lineage, and derived PASS/BLOCKED verdict. Validation rejects a call
 does not match the exact manifest receipt, even when callback and receipt hashes are independently
 well formed.
 
-Blocker and High findings require a fresh independent recheck with `verified_fixed` disposition.
-Medium findings require `verified_fixed`, or `accepted`/`deferred` with nonempty owner and
+Blocker and High findings require a fresh independent `remediation_recheck` with `verified_fixed`
+disposition and exact predecessor lineage. `verified_fixed` is invalid on preliminary or
+`final_remote` receipts. Medium findings require the same recheck, or `accepted`/`deferred` with nonempty owner and
 rationale. Final validation requires a fresh `final_remote` receipt for the exact canonical remote
 issue-body hash. Auditor IDs cannot overlap patch authors, contestants, tournament judges, phase
 auditors, transition judges, implementation workers, or predecessor Plan auditors.
@@ -156,7 +158,8 @@ Authorization is valid only when it binds:
 - an authenticated parent-user-message receipt containing the parent thread ID, exact draft
   SHA-256, exact message SHA-256, and message timestamp. The parent message must explicitly
   and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected,
-  or conflicting language is not authorization.
+  or conflicting language is not authorization. Any later parent-user revocation for that draft
+  invalidates the receipt before the next write.
 
 Any identity, repository, parent, capability, or draft drift invalidates authorization before a
 write. The transaction guard reauthenticates the parent approval immediately before every write.

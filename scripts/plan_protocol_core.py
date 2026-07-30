@@ -116,6 +116,8 @@ def record_protocol_activation(
         "repo_root": manifest.get("repo_root"),
         "starting_commit": manifest.get("starting_commit"),
         "run_started_at": manifest.get("run_started_at"),
+        "mode": manifest.get("mode"),
+        "goal": manifest.get("goal"),
         "activated_at": event.get("recorded_at"),
         "activation_event_id": event.get("event_id"),
         "activation_event_sha256": event.get("event_sha256"),
@@ -195,6 +197,8 @@ def validate_protocol_activation_receipt(
         "repo_root",
         "starting_commit",
         "run_started_at",
+        "mode",
+        "goal",
         "workflow_version",
         "plan_protocol_version",
     )

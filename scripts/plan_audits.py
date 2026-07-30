@@ -149,6 +149,15 @@ def validate_plan_audits(
             if finding_key in finding_ids:
                 errors.append(f"{prefix}: finding IDs must be unique within an audit")
             finding_ids.add(finding_key)
+            if (
+                isinstance(finding, dict)
+                and finding.get("disposition") == "verified_fixed"
+                and kind != "remediation_recheck"
+            ):
+                errors.append(
+                    f"{prefix}.findings[{finding_index}].disposition "
+                    "verified_fixed is only valid in remediation_recheck"
+                )
             if isinstance(finding, dict) and finding.get("severity") in ("Blocker", "High", "Medium"):
                 if finding.get("disposition") == "open":
                     unresolved[str(finding.get("finding_id", ""))] = finding

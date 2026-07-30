@@ -292,9 +292,14 @@ def verify_parent_graph_authorization(
             f"expected one parent rollout session for {parent_id}, found {len(parent_files)}"
         ]
     matched = False
+    later_user_messages: list[str] = []
     try:
-        for line in parent_files[0].read_text().splitlines():
-            item = json.loads(line)
+        records = [
+            json.loads(line)
+            for line in parent_files[0].read_text().splitlines()
+            if line.strip()
+        ]
+        for item in records:
             payload = item.get("payload", {})
             if item.get("type") != "response_item" or payload.get("type") != "message":
                 continue
@@ -306,28 +311,32 @@ def verify_parent_graph_authorization(
                 if isinstance(block, dict)
             )
             if hashlib.sha256(message.encode()).hexdigest() != message_sha:
+                if matched:
+                    later_user_messages.append(message)
                 continue
             if item.get("timestamp") != evidence.get("authorized_at"):
                 continue
             lowered = message.lower()
             draft_token = re.escape(str(draft_sha).lower())
-            affirmative = re.search(
-                rf"(?im)^\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
+            affirmative = re.fullmatch(
+                rf"(?is)\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
                 rf"(?:approve|authorize)\s+(?:the\s+)?"
-                rf"(?:graph\s+draft|draft\s+graph|graph|draft)\b[^\n]*"
-                rf"{draft_token}\b",
+                rf"(?:graph\s+draft|draft\s+graph)\s+{draft_token}[.!]?\s*",
                 lowered,
             )
-            denial = re.search(
-                rf"(?is)\b(?:do\s+not|don't|not|never|deny|reject|revoke)\b"
-                rf".{{0,100}}\b(?:approve|authorize|graph|draft)\b"
-                rf".{{0,200}}{draft_token}\b",
-                lowered,
-            )
-            if not affirmative or denial:
+            if not affirmative:
                 continue
             matched = True
-            break
+        revocation = re.compile(
+            rf"(?is)(?:"
+            rf"\b(?:revoke|withdraw|cancel|deny|reject)\b.{{0,160}}{draft_token}\b|"
+            rf"\b(?:do\s+not|don't|never)\s+(?:approve|authorize|proceed)\b"
+            rf".{{0,160}}(?:{draft_token}\b|graph|draft)|"
+            rf"\bstop\b.{{0,80}}\b(?:graph|draft|proceed)\b"
+            rf")"
+        )
+        if matched and any(revocation.search(message.lower()) for message in later_user_messages):
+            matched = False
     except (OSError, json.JSONDecodeError) as exc:
         return [f"graph authorization parent trace is unreadable: {exc}"]
     if not matched:

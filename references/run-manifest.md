@@ -143,7 +143,7 @@ legacy/migration rules are defined in [plan-protocol.md](plan-protocol.md). A mi
 fails closed; a legacy run must explicitly retain `plan-protocol/v1` before resume or migration.
 Migration also persists `workflow_version: evidence-gated-delivery/plan-protocol-v2` and a
 write-once external activation receipt derived from `run_id`. The receipt binds the activation
-event, authenticated parent thread, run start, repository baseline, workflow, and protocol outside
+event, authenticated parent thread, run start, repository baseline, goal, mode, workflow, and protocol outside
 the mutable manifest/event chain. Validation recovers it by exact run ID or authenticated parent
 thread alone, then compares every other binding; identity substitution or restored legacy fields
 therefore fail even if migration events are removed. A v2 manifest without its authenticated
@@ -167,9 +167,10 @@ task IDs, affected-module entries, intended or actual paths, and repository evid
 are `none`, `runtime_capture`, and `generative_mockup`. `none` requires complete positive
 nonvisual coverage, exact authoritative deliverable binding, and empty image receipts.
 `runtime_capture` requires current runtime evidence. Each evidence record names covered scope IDs,
-an allowed capture kind, capture timestamp, bounded evidence text, and a durable HTTPS artifact or
-lowercase SHA-256. Sufficiency defaults false and is recomputed per scope entry; evidence captured
-before the run's freshness bound cannot satisfy the gate.
+an allowed capture kind, timezone-aware capture timestamp, bounded evidence text, a readable absolute local
+artifact path, and a lowercase SHA-256 matching those artifact bytes. Sufficiency defaults false
+and is recomputed per scope entry; unreadable, digest-mismatched, or stale evidence cannot satisfy
+the gate.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 
