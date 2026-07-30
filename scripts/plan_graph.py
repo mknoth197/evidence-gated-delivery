@@ -147,8 +147,26 @@ def verify_graph_authorization(
     for field, expected in capability_matches.items():
         if capability_receipt.get(field) != expected:
             errors.append(f"capability receipt {field} is missing or stale")
-    if not isinstance(authorization.get("authorization_evidence"), str) or not authorization["authorization_evidence"].strip():
-        errors.append("graph authorization requires explicit authorization evidence")
+    evidence = authorization.get("authorization_evidence")
+    if not isinstance(evidence, dict):
+        errors.append("graph authorization requires authenticated authorization evidence")
+    else:
+        expected_evidence = {
+            "receipt_kind": "authenticated_parent_user_message",
+            "draft_sha256": draft.get("draft_sha256"),
+        }
+        for field, expected in expected_evidence.items():
+            if evidence.get(field) != expected:
+                errors.append(f"graph authorization evidence {field} mismatch")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(evidence.get("message_sha256"))):
+            errors.append("graph authorization evidence message_sha256 is invalid")
+        try:
+            _validate_iso8601(
+                evidence.get("authorized_at"),
+                "graph authorization evidence authorized_at",
+            )
+        except PlanProtocolError as exc:
+            errors.append(str(exc))
     try:
         _validate_iso8601(authorization.get("authorized_at"), "graph authorization authorized_at")
     except PlanProtocolError as exc:

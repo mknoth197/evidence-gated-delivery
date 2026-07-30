@@ -143,6 +143,15 @@ def main() -> int:
         help="Persisted effective user direction; repeat in source order",
     )
     parser.add_argument(
+        "--runtime-evidence",
+        type=Path,
+        help="JSON array of current, scope-bound runtime visual evidence",
+    )
+    parser.add_argument(
+        "--runtime-evidence-not-before",
+        help="ISO-8601 lower bound for current runtime evidence",
+    )
+    parser.add_argument(
         "--allow-host",
         action="append",
         default=[],
@@ -162,6 +171,12 @@ def main() -> int:
         return 2
 
     disposition: dict[str, object]
+    runtime_evidence = None
+    if args.runtime_evidence:
+        try:
+            runtime_evidence = json.loads(args.runtime_evidence.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"runtime evidence is unreadable: {exc}")
     if args.visual_disposition:
         try:
             disposition = json.loads(args.visual_disposition.read_text())
@@ -186,6 +201,8 @@ def main() -> int:
         phase="plan",
         require_embedded_inventory=args.plan_protocol_version == PLAN_PROTOCOL_V2,
         authoritative_user_directions=args.user_direction,
+        authoritative_runtime_evidence=runtime_evidence,
+        runtime_evidence_not_before=args.runtime_evidence_not_before,
     )
     errors.extend(disposition_errors)
     lint_receipt = None

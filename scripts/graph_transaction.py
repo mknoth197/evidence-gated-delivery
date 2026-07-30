@@ -22,6 +22,7 @@ Readback = Callable[[], dict[str, Any]]
 Guard = Callable[[], list[str]]
 Recorder = Callable[[dict[str, Any]], None]
 LiveEvidence = Callable[[], dict[str, Any]]
+AuthorizationVerifier = Callable[[dict[str, Any], dict[str, Any]], list[str]]
 _MISSING = object()
 
 
@@ -103,6 +104,7 @@ def authorization_guard(
     capability_receipt: dict[str, Any],
     *,
     live_evidence: LiveEvidence,
+    authorization_verifier: AuthorizationVerifier,
 ) -> Guard:
     def check() -> list[str]:
         observed = live_evidence()
@@ -125,6 +127,7 @@ def authorization_guard(
             current_parent_issue_url=str(observed["parent_issue_url"]),
             capability_receipt=observed["capability_receipt"],
         )
+        errors.extend(authorization_verifier(authorization, draft))
         if observed["capability_receipt"] != capability_receipt:
             errors.append(
                 "live capability receipt differs from the authorized capability receipt"

@@ -25,6 +25,7 @@ class PlanProtocolDependencies:
     collaboration_delegated_audit_evidence: Callable[..., Any]
     persisted_delegation_role_matches: Callable[..., bool]
     authoritative_graph_draft_errors: Callable[..., list[str]]
+    verify_parent_graph_authorization: Callable[..., list[str]]
     _gh_json: Callable[..., Any]
     _live_graph_capabilities: Callable[..., Any]
     _remote_graph_state: Callable[..., Any]
@@ -312,6 +313,9 @@ def validate_plan_protocol_evidence(
                 capability_receipt=capability,
             )
         )
+        errors.extend(
+            deps.verify_parent_graph_authorization(data, authorization, draft)
+        )
         recorded_remote_state = data.get("graph_remote_state")
         if not skip_remote:
             live_state, live_error = deps._remote_graph_state(
@@ -537,6 +541,8 @@ def add_plan_errors(
             require_embedded_inventory=data.get("plan_protocol_version")
             == PLAN_PROTOCOL_V2,
             authoritative_user_directions=data.get("visual_user_directions"),
+            authoritative_runtime_evidence=data.get("runtime_visual_evidence"),
+            runtime_evidence_not_before=data.get("run_started_at"),
         )
         errors.extend(disposition_errors)
         if validated_mode is not None and validated_mode != visual_mode:

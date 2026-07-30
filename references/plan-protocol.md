@@ -152,10 +152,13 @@ Authorization is valid only when it binds:
 - exact repository and parent issue;
 - a current capability receipt proving native parent, blocking, and read-back support;
 - graph draft SHA-256, every child-body SHA-256, and every edge;
-- explicit authorization evidence and timestamp.
+- an authenticated parent-user-message receipt containing the parent thread ID, exact draft
+  SHA-256, exact message SHA-256, and message timestamp. The parent message must explicitly
+  approve or authorize that exact graph draft hash.
 
 Any identity, repository, parent, capability, or draft drift invalidates authorization before a
-write. Graph action records use `attempted`, `verified`, or `blocked`; a successful command is not
+write. The transaction guard reauthenticates the parent approval immediately before every write.
+Graph action records use `attempted`, `verified`, or `blocked`; a successful command is not
 `verified` until remote read-back agrees.
 
 ## Reconciliation

@@ -166,7 +166,10 @@ canonical inventory of the scoped deliverable, effective user direction, stable 
 task IDs, affected-module entries, intended or actual paths, and repository evidence. Valid modes
 are `none`, `runtime_capture`, and `generative_mockup`. `none` requires complete positive
 nonvisual coverage, exact authoritative deliverable binding, and empty image receipts.
-`runtime_capture` requires current runtime evidence
+`runtime_capture` requires current runtime evidence. Each evidence record names covered scope IDs,
+an allowed capture kind, capture timestamp, bounded evidence text, and a durable HTTPS artifact or
+lowercase SHA-256. Sufficiency defaults false and is recomputed per scope entry; evidence captured
+before the run's freshness bound cannot satisfy the gate.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

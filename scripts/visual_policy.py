@@ -301,6 +301,8 @@ def validate_disposition(
     authoritative_paths: list[str] | None = None,
     require_embedded_inventory: bool = False,
     authoritative_user_directions: list[str] | None = None,
+    authoritative_runtime_evidence: list[dict[str, Any]] | None = None,
+    runtime_evidence_not_before: str | None = None,
 ) -> tuple[str | None, dict[str, Any] | None, list[str]]:
     """Validate a receipt and, when supplied, recompute it from current evidence."""
 
@@ -359,13 +361,19 @@ def validate_disposition(
         recompute = True
     if inventory is None:
         inventory, inventory_errors = extract_scope_inventory(
-            body, user_directions=authoritative_user_directions
+            body,
+            user_directions=authoritative_user_directions,
+            runtime_evidence=authoritative_runtime_evidence,
+            runtime_evidence_not_before=runtime_evidence_not_before,
         )
         errors.extend(inventory_errors)
     else:
         errors.extend(_entry_errors(inventory, declared_ids))
     authoritative_inventory, authoritative_errors = extract_scope_inventory(
-        body, user_directions=authoritative_user_directions
+        body,
+        user_directions=authoritative_user_directions,
+        runtime_evidence=authoritative_runtime_evidence,
+        runtime_evidence_not_before=runtime_evidence_not_before,
     )
     errors.extend(authoritative_errors)
     if not authoritative_errors and embedded_inventory is not None:

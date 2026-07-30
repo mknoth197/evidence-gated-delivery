@@ -506,7 +506,13 @@ class GraphTests(unittest.TestCase):
                 child["body_sha256"] for child in self.draft["children"]
             ],
             "edges": self.draft["edges"],
-            "authorization_evidence": "User explicitly approved exact frozen draft",
+            "authorization_evidence": {
+                "receipt_kind": "authenticated_parent_user_message",
+                "parent_thread_id": "019f0000-0000-7000-8000-000000000001",
+                "draft_sha256": self.draft["draft_sha256"],
+                "message_sha256": "a" * 64,
+                "authorized_at": "2026-07-29T10:00:00Z",
+            },
             "authorized_at": "2026-07-29T10:00:00Z",
         }
 

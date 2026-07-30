@@ -18,8 +18,11 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from plan_protocol import (
+    PLAN_PROTOCOL_V2,
     WORKFLOW_VERSION_V2,
+    PlanProtocolError,
     append_plan_event,
+    protocol_activation_receipt_path,
     record_protocol_activation,
 )
 
@@ -75,6 +78,36 @@ def main() -> int:
     now_text = now.isoformat().replace("+00:00", "Z")
     run_id = args.run_id or f"{slug(args.goal)}-{now.strftime('%Y%m%dT%H%M%SZ')}"
     output = args.output or Path(f"/tmp/evidence-gated-delivery-{run_id}.json")
+    if output.exists():
+        print(f"error: refusing to overwrite existing manifest {output}", file=sys.stderr)
+        return 2
+    parent_thread_id = os.environ.get("CODEX_THREAD_ID", "")
+    starting_commit = git(root, "rev-parse", "HEAD")
+    activation_recorded_at = now_text
+    activation_event_id = None
+    activation_path = protocol_activation_receipt_path(run_id)
+    if activation_path.exists():
+        try:
+            stranded = json.loads(activation_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise PlanProtocolError("stranded initialization receipt is unreadable") from exc
+        stable_bindings = {
+            "run_id": run_id,
+            "parent_thread_id": parent_thread_id,
+            "repo_root": str(root),
+            "starting_commit": starting_commit,
+            "workflow_version": WORKFLOW_VERSION_V2,
+            "plan_protocol_version": PLAN_PROTOCOL_V2,
+        }
+        if not isinstance(stranded, dict) or any(
+            stranded.get(field) != value for field, value in stable_bindings.items()
+        ):
+            raise PlanProtocolError(
+                "stranded initialization receipt does not match the requested run"
+            )
+        now_text = str(stranded.get("run_started_at", ""))
+        activation_recorded_at = str(stranded.get("activated_at", ""))
+        activation_event_id = stranded.get("activation_event_id")
     spec_status = [
         line
         for line in git(root, "status", "--porcelain", "--", ".github/specs").splitlines()
@@ -84,7 +117,7 @@ def main() -> int:
     manifest = {
         "run_id": run_id,
         "run_started_at": now_text,
-        "parent_thread_id": os.environ.get("CODEX_THREAD_ID", ""),
+        "parent_thread_id": parent_thread_id,
         "phase_timeline": {
             "research_started_at": now_text,
             "research_completed_at": "",
@@ -95,7 +128,7 @@ def main() -> int:
         "goal": args.goal,
         "selected_mode_reason": "",
         "repo_root": str(root),
-        "starting_commit": git(root, "rev-parse", "HEAD"),
+        "starting_commit": starting_commit,
         "initial_spec_status": spec_status,
         "initial_spec_hashes": spec_hashes(root),
         "approved_artifact_hosts": [],
@@ -196,7 +229,8 @@ def main() -> int:
             "plan_protocol_version": manifest["plan_protocol_version"],
             "starting_commit": manifest["starting_commit"],
         },
-        recorded_at=now_text,
+        recorded_at=activation_recorded_at,
+        event_id=activation_event_id,
     )
     record_protocol_activation(manifest, activation_event)
 

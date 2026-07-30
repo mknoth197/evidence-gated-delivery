@@ -17,10 +17,15 @@ from visual_core import (
     _intent_group,
     _sequential,
     markdown_section,
+    runtime_evidence_sufficient,
 )
 
 def extract_scope_inventory(
-    body: str, *, user_directions: list[str] | None = None
+    body: str,
+    *,
+    user_directions: list[str] | None = None,
+    runtime_evidence: list[dict[str, Any]] | None = None,
+    runtime_evidence_not_before: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Derive the Plan issue's stable inventory used by the integration gate.
 
@@ -100,15 +105,22 @@ def extract_scope_inventory(
                 kind = "new_visual_concept"
             else:
                 kind = "nonvisual"
+            module_id = f"M-{len(modules) + 1:03d}"
             modules.append(
                 {
-                    "id": f"M-{len(modules) + 1:03d}",
+                    "id": module_id,
                     "task_id": task_id,
                     "source": entry,
                     "kind": kind,
                     "provenance": f"authoritative task {task_id} affected-modules text",
                     **(
-                        {"runtime_evidence_sufficient": True}
+                        {
+                            "runtime_evidence_sufficient": runtime_evidence_sufficient(
+                                module_id,
+                                runtime_evidence,
+                                not_before=runtime_evidence_not_before,
+                            )
+                        }
                         if kind in RUNTIME_KINDS
                         else {}
                     ),
@@ -158,7 +170,13 @@ def extract_scope_inventory(
                 "provenance": f"authoritative Tasks entry {task_id}",
                 "classification_basis": "affected_modules",
                 **(
-                    {"runtime_evidence_sufficient": True}
+                    {
+                        "runtime_evidence_sufficient": runtime_evidence_sufficient(
+                            task_id,
+                            runtime_evidence,
+                            not_before=runtime_evidence_not_before,
+                        )
+                    }
                     if task_group == "runtime"
                     else {}
                 ),
@@ -224,7 +242,13 @@ def extract_scope_inventory(
                 "provenance": f"authoritative Acceptance Criteria marker {value}",
                 "classification_basis": "affected_modules",
                 **(
-                    {"runtime_evidence_sufficient": True}
+                    {
+                        "runtime_evidence_sufficient": runtime_evidence_sufficient(
+                            value,
+                            runtime_evidence,
+                            not_before=runtime_evidence_not_before,
+                        )
+                    }
                     if kind in RUNTIME_KINDS
                     else {}
                 ),
@@ -245,8 +269,14 @@ def extract_scope_inventory(
                 "provenance": "authoritative Plan body",
                 "classification_basis": "affected_modules",
                 **(
-                    {"runtime_evidence_sufficient": True}
-                    if overall_visual
+                    {
+                        "runtime_evidence_sufficient": runtime_evidence_sufficient(
+                            "D-001",
+                            runtime_evidence,
+                            not_before=runtime_evidence_not_before,
+                        )
+                    }
+                    if overall_group == "runtime"
                     else {}
                 ),
             }
@@ -269,12 +299,19 @@ def inventory_sha256(inventory: dict[str, Any]) -> str:
 
 
 def build_plan_inventory(
-    body: str, *, user_directions: list[str] | None = None
+    body: str,
+    *,
+    user_directions: list[str] | None = None,
+    runtime_evidence: list[dict[str, Any]] | None = None,
+    runtime_evidence_not_before: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Build the v2 Plan inventory from canonical issue text."""
 
     inventory, errors = extract_scope_inventory(
-        body, user_directions=user_directions
+        body,
+        user_directions=user_directions,
+        runtime_evidence=runtime_evidence,
+        runtime_evidence_not_before=runtime_evidence_not_before,
     )
     seen_paths: set[str] = set()
     planned_paths: list[dict[str, Any]] = []

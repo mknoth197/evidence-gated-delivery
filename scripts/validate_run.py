@@ -111,6 +111,9 @@ def _plan_protocol_dependencies() -> plan_phase_validation.PlanProtocolDependenc
         collaboration_delegated_audit_evidence=collaboration_delegated_audit_evidence,
         persisted_delegation_role_matches=persisted_delegation_role_matches,
         authoritative_graph_draft_errors=authoritative_graph_draft_errors,
+        verify_parent_graph_authorization=(
+            collaboration_receipts.verify_parent_graph_authorization
+        ),
         _gh_json=_gh_json,
         _live_graph_capabilities=_live_graph_capabilities,
         _remote_graph_state=_remote_graph_state,

@@ -35,7 +35,8 @@ separate artifact chain for each initiative.
 
 A visual disposition is derived from the complete scoped issue, acceptance criteria, tasks,
 affected modules, intended paths, user direction, and repository evidence. `none` requires
-positive complete nonvisual coverage; `runtime_capture` requires current runtime evidence but no
+positive complete nonvisual coverage; `runtime_capture` requires current, timestamped,
+artifact-bound evidence covering every runtime scope ID but no
 ImageGen; `generative_mockup` requires the complete visual tournament and publication contract.
 Recompute it from intended paths at Implement Orientation and the actual diff at Review.
 

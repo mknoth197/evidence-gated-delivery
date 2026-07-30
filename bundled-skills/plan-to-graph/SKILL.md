@@ -74,9 +74,12 @@ Present the exact frozen draft before any mutation: authenticated login and acco
 parent, capability receipt, each child title and full-body hash, ordered edges, collision result,
 and draft SHA-256. Ask the user to explicitly authorize that exact draft.
 
-Authorization evidence binds all of those values plus its timestamp. Approval of a Plan, a previous
-draft, or “continue” from before the draft was frozen is not graph authorization. Drift invalidates
-authorization. Never broaden authorization to later edits or unknown recovery actions.
+Authorization evidence is an authenticated parent-user-message receipt binding the parent thread,
+exact draft SHA-256, exact message SHA-256, and message timestamp. The message itself must explicitly
+approve or authorize that exact graph draft hash. Approval of a Plan, a previous draft, or
+“continue” from before the draft was frozen is not graph authorization. Reauthenticate the receipt
+before every write. Drift invalidates authorization. Never broaden authorization to later edits or
+unknown recovery actions.
 
 ## Transaction and action ledger
 

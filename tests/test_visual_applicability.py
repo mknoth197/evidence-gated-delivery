@@ -532,7 +532,18 @@ Adjust an existing component state.
 - WHEN opened, THE SYSTEM SHALL expose the existing component state. <!-- AC-001 -->
 """
         inventory, errors = visual.build_plan_inventory(
-            body, user_directions=["Use current runtime evidence."]
+            body,
+            user_directions=["Use current runtime evidence."],
+            runtime_evidence=[
+                {
+                    "kind": "screenshot",
+                    "evidence": "Current Panel state",
+                    "scope_ids": ["D-001", "T-001", "M-001", "AC-001"],
+                    "artifact_sha256": "a" * 64,
+                    "captured_at": "2026-07-29T12:00:00Z",
+                }
+            ],
+            runtime_evidence_not_before="2026-07-29T11:00:00Z",
         )
         self.assertEqual(errors, [])
         self.assertTrue(inventory["planned_paths"][0]["runtime_evidence_sufficient"])
@@ -543,6 +554,63 @@ Adjust an existing component state.
             declared_ids=declarations(inventory),
         )
         self.assertEqual(receipt["evidence_mode"], "runtime_capture")
+
+    def test_runtime_sufficiency_defaults_false_without_bound_current_evidence(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Adjust an existing component state.
+
+## Tasks
+- [ ] **T-001 — Adjust existing component.** Objective: update state behavior. Context: existing UI. Affected modules: `web/Panel.tsx`. Requirements: preserve layout. Verification: inspect the runtime. Complete when verified. Owner lane: web. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN opened, THE SYSTEM SHALL expose the existing component state. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Use current runtime evidence."]
+        )
+        self.assertEqual(errors, [])
+        self.assertFalse(
+            inventory["planned_paths"][0]["runtime_evidence_sufficient"]
+        )
+        receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(receipt["evidence_mode"], "generative_mockup")
+
+    def test_policy_terminology_cannot_mask_visual_deliverable(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Create a marketing asset and hero image while recording visual-applicability.
+
+## Tasks
+- [ ] **T-001 — Create hero image.** Objective: create a marketing asset. Context: visual-applicability. Affected modules: `web/hero-image.png`. Requirements: produce the hero image. Verification: inspect it. Complete when approved. Owner lane: web. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL provide the hero image and record visual-applicability. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Generate the requested visual."]
+        )
+        self.assertEqual(errors, [])
+        receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(receipt["evidence_mode"], "generative_mockup")
 
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan

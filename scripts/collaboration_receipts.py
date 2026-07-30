@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -257,3 +258,68 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
         and task_name
         == f"execution_auditor_phase_{match.group(1).replace('-', '_')}"
     )
+
+
+def verify_parent_graph_authorization(
+    data: dict[str, Any],
+    authorization: dict[str, Any],
+    draft: dict[str, Any],
+) -> list[str]:
+    """Authenticate exact-draft graph approval from the parent user trace."""
+
+    evidence = authorization.get("authorization_evidence")
+    if not isinstance(evidence, dict):
+        return ["graph authorization evidence must be an authenticated receipt"]
+    parent_id = data.get("parent_thread_id")
+    draft_sha = draft.get("draft_sha256")
+    errors: list[str] = []
+    if evidence.get("receipt_kind") != "authenticated_parent_user_message":
+        errors.append("graph authorization evidence receipt_kind is invalid")
+    if evidence.get("parent_thread_id") != parent_id:
+        errors.append("graph authorization evidence parent_thread_id mismatch")
+    if evidence.get("draft_sha256") != draft_sha:
+        errors.append("graph authorization evidence draft SHA-256 mismatch")
+    message_sha = evidence.get("message_sha256")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(message_sha)):
+        errors.append("graph authorization evidence message_sha256 is invalid")
+    if errors or not nonempty(parent_id):
+        return errors or ["graph authorization needs parent_thread_id"]
+
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    parent_files = list((codex_home / "sessions").rglob(f"*{parent_id}.jsonl"))
+    if len(parent_files) != 1:
+        return [
+            f"expected one parent rollout session for {parent_id}, found {len(parent_files)}"
+        ]
+    matched = False
+    try:
+        for line in parent_files[0].read_text().splitlines():
+            item = json.loads(line)
+            payload = item.get("payload", {})
+            if item.get("type") != "response_item" or payload.get("type") != "message":
+                continue
+            if payload.get("role") != "user":
+                continue
+            message = "\n".join(
+                block.get("text", "")
+                for block in payload.get("content", [])
+                if isinstance(block, dict)
+            )
+            if hashlib.sha256(message.encode()).hexdigest() != message_sha:
+                continue
+            if item.get("timestamp") != evidence.get("authorized_at"):
+                continue
+            lowered = message.lower()
+            if str(draft_sha) not in message or not re.search(
+                r"\b(?:approve|authorize)\b.*\b(?:graph|draft)\b", lowered, re.DOTALL
+            ):
+                continue
+            matched = True
+            break
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"graph authorization parent trace is unreadable: {exc}"]
+    if not matched:
+        errors.append(
+            "parent trace lacks an exact user authorization bound to the graph draft SHA-256"
+        )
+    return errors

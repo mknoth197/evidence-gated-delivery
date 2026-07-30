@@ -8,19 +8,11 @@ framework only matters when it is represented by an in-scope inventory entry.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import re
-import sys
-from pathlib import Path
-from typing import Any, Iterable
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
-from plan_protocol import PlanProtocolError, parse_tasks
+from datetime import datetime
+from typing import Any
 
 POLICY_VERSION = "visual-applicability/v1"
 BLOCKED_DECISION = "BLOCKED_PENDING_VISUAL_CLARIFICATION"
@@ -171,15 +163,71 @@ def _declared_kind_group(kind: Any) -> str | None:
     return None
 
 
+def runtime_evidence_sufficient(
+    scope_id: str,
+    evidence: Any,
+    *,
+    not_before: str | None = None,
+) -> bool:
+    """Prove current, scope-bound runtime evidence for one inventory entry."""
+
+    try:
+        threshold = (
+            datetime.fromisoformat(not_before.replace("Z", "+00:00"))
+            if isinstance(not_before, str) and not_before
+            else None
+        )
+    except ValueError:
+        return False
+    for item in evidence if isinstance(evidence, list) else []:
+        if not isinstance(item, dict):
+            continue
+        scope_ids = item.get("scope_ids")
+        if not isinstance(scope_ids, list) or scope_id not in scope_ids:
+            continue
+        if item.get("kind") not in {
+            "screenshot",
+            "dom_accessibility",
+            "visual_regression",
+            "runtime_recording",
+        }:
+            continue
+        if not isinstance(item.get("evidence"), str) or not item["evidence"].strip():
+            continue
+        artifact_hash = item.get("artifact_sha256") or item.get("sha256")
+        artifact_url = item.get("artifact_url")
+        if not (
+            re.fullmatch(r"[0-9a-f]{64}", str(artifact_hash))
+            or (
+                isinstance(artifact_url, str)
+                and artifact_url.startswith("https://")
+            )
+        ):
+            continue
+        try:
+            captured = datetime.fromisoformat(
+                str(item.get("captured_at", "")).replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        if threshold is not None and captured < threshold:
+            continue
+        return True
+    return False
+
+
 def _intent_group(text: str) -> str:
     lowered = text.lower()
+    inferred = _inferred_kind_group({"source": text})
+    if inferred in {"generative", "runtime"}:
+        return inferred
     if re.search(
         r"\b(visual[- ]applicability|evidence[_ -]mode|generative_mockup|"
         r"classif(?:y|ication)|selects? (?:the )?(?:visual|runtime|generative))\b",
         lowered,
     ):
         return "nonvisual"
-    return _inferred_kind_group({"source": text}) or "nonvisual"
+    return inferred or "nonvisual"
 
 
 def _direction_entry(identifier: str, source: str, order: int) -> dict[str, Any]:

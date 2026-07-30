@@ -79,7 +79,13 @@ class GraphTransactionTests(unittest.TestCase):
                 child["body_sha256"] for child in self.draft["children"]
             ],
             "edges": self.draft["edges"],
-            "authorization_evidence": "approved exact graph",
+            "authorization_evidence": {
+                "receipt_kind": "authenticated_parent_user_message",
+                "parent_thread_id": "019f0000-0000-7000-8000-000000000001",
+                "draft_sha256": self.draft["draft_sha256"],
+                "message_sha256": "a" * 64,
+                "authorized_at": "2026-07-29T12:00:00Z",
+            },
             "authorized_at": "2026-07-29T12:00:00Z",
         }
         wrong_identity = transaction.authorization_guard(
@@ -93,6 +99,7 @@ class GraphTransactionTests(unittest.TestCase):
                 "parent_issue_url": self.parent,
                 "capability_receipt": capability,
             },
+            authorization_verifier=lambda _authorization, _draft: [],
         )
         self.assertTrue(wrong_identity())
         stale = copy.deepcopy(capability)
@@ -108,6 +115,7 @@ class GraphTransactionTests(unittest.TestCase):
                 "parent_issue_url": self.parent,
                 "capability_receipt": stale,
             },
+            authorization_verifier=lambda _authorization, _draft: [],
         )
         self.assertTrue(wrong_capability())
 
@@ -354,7 +362,13 @@ class GraphTransactionTests(unittest.TestCase):
                 child["body_sha256"] for child in self.draft["children"]
             ],
             "edges": self.draft["edges"],
-            "authorization_evidence": "approved exact graph",
+            "authorization_evidence": {
+                "receipt_kind": "authenticated_parent_user_message",
+                "parent_thread_id": "019f0000-0000-7000-8000-000000000001",
+                "draft_sha256": self.draft["draft_sha256"],
+                "message_sha256": "a" * 64,
+                "authorized_at": "2026-07-29T12:00:00Z",
+            },
             "authorized_at": "2026-07-29T12:00:00Z",
         }
         reads = 0
@@ -371,11 +385,62 @@ class GraphTransactionTests(unittest.TestCase):
             }
 
         guard = transaction.authorization_guard(
-            authorization, self.draft, capability, live_evidence=live
+            authorization,
+            self.draft,
+            capability,
+            live_evidence=live,
+            authorization_verifier=lambda _authorization, _draft: [],
         )
         self.assertEqual(guard(), [])
         self.assertTrue(guard())
         self.assertEqual(reads, 2)
+
+    def test_guard_rejects_unauthenticated_parent_approval(self):
+        capability = {
+            "github_login": "me",
+            "github_account_id": "1",
+            "repository": "o/r",
+            "parent_issue_url": self.parent,
+            "native_parent_supported": True,
+            "blocking_supported": True,
+            "readback_supported": True,
+        }
+        authorization = {
+            "github_login": "me",
+            "github_account_id": "1",
+            "repository": "o/r",
+            "parent_issue_url": self.parent,
+            "draft_sha256": self.draft["draft_sha256"],
+            "capability_receipt_sha256": protocol.sha256_json(capability),
+            "child_body_sha256s": [
+                child["body_sha256"] for child in self.draft["children"]
+            ],
+            "edges": self.draft["edges"],
+            "authorization_evidence": {
+                "receipt_kind": "authenticated_parent_user_message",
+                "parent_thread_id": "019f0000-0000-7000-8000-000000000001",
+                "draft_sha256": self.draft["draft_sha256"],
+                "message_sha256": "a" * 64,
+                "authorized_at": "2026-07-29T12:00:00Z",
+            },
+            "authorized_at": "2026-07-29T12:00:00Z",
+        }
+        guard = transaction.authorization_guard(
+            authorization,
+            self.draft,
+            capability,
+            live_evidence=lambda: {
+                "github_login": "me",
+                "github_account_id": "1",
+                "repository": "o/r",
+                "parent_issue_url": self.parent,
+                "capability_receipt": capability,
+            },
+            authorization_verifier=lambda _authorization, _draft: [
+                "parent trace lacks exact approval"
+            ],
+        )
+        self.assertTrue(any("parent trace" in error for error in guard()))
 
 
 if __name__ == "__main__":
