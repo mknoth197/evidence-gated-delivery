@@ -264,8 +264,8 @@ Goal: choose and freeze what should be built.
    - `runtime_capture` for existing-UI work fully verifiable through current runtime, DOM,
      accessibility, or visual-regression evidence; or
    - `generative_mockup` for new or substantially redesigned visual concepts, inherently visual
-     deliverables such as illustrations, icon sets, brand or marketing assets, or explicit
-     ImageGen exploration.
+     deliverables such as illustrations, icon sets, logos, artwork, photography, brand or
+     marketing assets, or explicit ImageGen exploration.
    An unrelated frontend does not make images applicable. Documentation expressed adequately
    through prose, tables, or Mermaid is nonvisual unless appearance is itself the deliverable.
    Incomplete or materially ambiguous scope blocks before visual work. Bind the canonical scope
@@ -276,8 +276,10 @@ Goal: choose and freeze what should be built.
    Runtime sufficiency defaults false. Select `runtime_capture` only when every runtime-classified
    scope entry is covered by a current evidence record naming its scope IDs, allowed capture kind,
    timezone-aware capture timestamp, bounded evidence, readable absolute local artifact path, and SHA-256
-   matching the artifact bytes. Evidence older than the run freshness bound, unscoped prose, an
-   unreadable artifact, or a bare `{kind, evidence}` assertion is insufficient.
+   matching artifact bytes whose content signature is valid for the declared capture kind.
+   Evidence older than the run freshness bound, unscoped prose, an unreadable or type-mismatched
+   artifact, or a bare `{kind, evidence}` assertion is insufficient. Recompute these fields from
+   the authoritative evidence during validation; never reuse embedded sufficiency booleans.
    Capture the current authenticated product surface only when the selected mode requires it.
    An assumed shell may illustrate a research concept, but it is not eligible to be normative or to
    enter the mockup-accounting matrix.

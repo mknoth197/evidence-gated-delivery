@@ -142,12 +142,14 @@ Plan-audit receipts, graph-policy receipt, and graph transaction fields. The ful
 legacy/migration rules are defined in [plan-protocol.md](plan-protocol.md). A missing version always
 fails closed; a legacy run must explicitly retain `plan-protocol/v1` before resume or migration.
 Migration also persists `workflow_version: evidence-gated-delivery/plan-protocol-v2` and a
-write-once external activation receipt derived from `run_id`. The receipt binds the activation
+write-once versioned external activation receipt derived from `run_id`. The receipt binds the activation
 event, authenticated parent thread, run start, repository baseline, goal, mode, workflow, and protocol outside
 the mutable manifest/event chain. Validation recovers it by exact run ID or authenticated parent
 thread alone, then compares every other binding; identity substitution or restored legacy fields
 therefore fail even if migration events are removed. A v2 manifest without its authenticated
 external receipt, or without the receipt-bound activation event, fails closed.
+Receipts created before activation schema versioning remain valid against their authenticated
+legacy field set; new receipts additionally bind goal and mode and cannot be rebound.
 
 `plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
 only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability
@@ -169,8 +171,9 @@ nonvisual coverage, exact authoritative deliverable binding, and empty image rec
 `runtime_capture` requires current runtime evidence. Each evidence record names covered scope IDs,
 an allowed capture kind, timezone-aware capture timestamp, bounded evidence text, a readable absolute local
 artifact path, and a lowercase SHA-256 matching those artifact bytes. Sufficiency defaults false
-and is recomputed per scope entry; unreadable, digest-mismatched, or stale evidence cannot satisfy
-the gate.
+and is recomputed per scope entry from authoritative evidence; unreadable, digest-mismatched,
+content-type-mismatched, or stale evidence cannot satisfy the gate. Embedded sufficiency values
+are never validation authority.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

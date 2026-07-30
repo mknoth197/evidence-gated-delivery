@@ -123,7 +123,9 @@ def _inferred_kind_group(entry: dict[str, Any]) -> str | None:
         r"\b(new[ _.-]?screen|new page|new component|new visual concept|redesign|"
         r"marketing asset|generated (?:web )?asset|landing page|hero image|"
         r"product illustration|illustrations?|icon set|brand asset|social card|"
-        r"poster|thumbnail)\b",
+        r"poster|thumbnail|company logo|logos?|cover artwork|artwork|"
+        r"product photograph|photographs?|photos?|photography|graphics?|"
+        r"visual asset|brand identity|avatars?|animations?)\b",
         text,
     ):
         return "generative"
@@ -215,6 +217,31 @@ def runtime_evidence_sufficient(
         except (OSError, ValueError):
             continue
         if hashlib.sha256(artifact_bytes).hexdigest() != artifact_hash:
+            continue
+        kind = item.get("kind")
+        if kind in {"screenshot", "visual_regression"} and not (
+            artifact_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+            or artifact_bytes.startswith(b"\xff\xd8\xff")
+            or artifact_bytes.startswith((b"GIF87a", b"GIF89a"))
+            or (
+                artifact_bytes.startswith(b"RIFF")
+                and artifact_bytes[8:12] == b"WEBP"
+            )
+        ):
+            continue
+        if kind == "runtime_recording" and not (
+            artifact_bytes.startswith(b"\x1aE\xdf\xa3")
+            or b"ftyp" in artifact_bytes[:32]
+        ):
+            continue
+        if kind == "dom_accessibility":
+            try:
+                parsed_artifact = json.loads(artifact_bytes.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(parsed_artifact, (dict, list)):
+                continue
+        if not artifact_bytes:
             continue
         try:
             captured = datetime.fromisoformat(

@@ -327,15 +327,10 @@ def verify_parent_graph_authorization(
             if not affirmative:
                 continue
             matched = True
-        revocation = re.compile(
-            rf"(?is)(?:"
-            rf"\b(?:revoke|withdraw|cancel|deny|reject)\b.{{0,160}}{draft_token}\b|"
-            rf"\b(?:do\s+not|don't|never)\s+(?:approve|authorize|proceed)\b"
-            rf".{{0,160}}(?:{draft_token}\b|graph|draft)|"
-            rf"\bstop\b.{{0,80}}\b(?:graph|draft|proceed)\b"
-            rf")"
-        )
-        if matched and any(revocation.search(message.lower()) for message in later_user_messages):
+        if matched and any(
+            re.search(rf"(?i)\b{draft_token}\b", message)
+            for message in later_user_messages
+        ):
             matched = False
     except (OSError, json.JSONDecodeError) as exc:
         return [f"graph authorization parent trace is unreadable: {exc}"]

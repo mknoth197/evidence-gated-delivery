@@ -423,6 +423,7 @@ def validate_disposition(
                     entry.get("id"),
                     str(entry.get("source", "")).strip(),
                     _declared_kind_group(entry.get("kind")),
+                    entry.get("runtime_evidence_sufficient"),
                 )
                 for entry in recorded
                 if isinstance(entry, dict)
@@ -432,14 +433,28 @@ def validate_disposition(
                     entry.get("id"),
                     str(entry.get("source", "")).strip(),
                     _declared_kind_group(entry.get("kind")),
+                    entry.get("runtime_evidence_sufficient"),
                 )
                 for entry in authoritative
                 if isinstance(entry, dict)
             ]
             if recorded_rows != authoritative_rows:
                 errors.append(
-                    f"visual {domain} do not exactly match authoritative issue text"
+                    f"visual {domain} do not exactly match authoritative issue "
+                    "text and runtime evidence"
                 )
+    if authoritative_runtime_evidence is not None and not authoritative_errors:
+        inventory = authoritative_inventory
+        declared_ids = {
+            domain: [
+                entry.get("id")
+                for entry in values
+                if isinstance(entry, dict) and _nonempty_text(entry.get("id"))
+            ]
+            for domain, values in authoritative_inventory.items()
+            if domain in DOMAIN_PREFIXES and isinstance(values, list)
+        }
+        recompute = True
     if receipt.get("scope_inventory_sha256") != inventory_sha256(inventory):
         errors.append("visual scope inventory SHA-256 does not match current scope evidence")
     if authoritative_paths is not None:

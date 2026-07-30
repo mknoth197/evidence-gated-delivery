@@ -16,6 +16,7 @@ from typing import Any, Iterable
 PLAN_PROTOCOL_V1 = "plan-protocol/v1"
 PLAN_PROTOCOL_V2 = "plan-protocol/v2"
 WORKFLOW_VERSION_V2 = "evidence-gated-delivery/plan-protocol-v2"
+ACTIVATION_RECEIPT_V2 = "activation-receipt/v2"
 SUPPORTED_PLAN_PROTOCOLS = frozenset((PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2))
 GRAPH_POLICY_VERSION = "graph-policy/v1"
 ZERO_HASH = "0" * 64
@@ -109,6 +110,7 @@ def record_protocol_activation(
     run_id = manifest.get("run_id")
     path = protocol_activation_receipt_path(run_id)
     payload = {
+        "receipt_version": ACTIVATION_RECEIPT_V2,
         "run_id": run_id.strip(),
         "parent_thread_id": manifest.get("parent_thread_id"),
         "plan_protocol_version": PLAN_PROTOCOL_V2,
@@ -132,6 +134,26 @@ def record_protocol_activation(
             existing = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise PlanProtocolError("v2 activation receipt is unreadable") from exc
+        legacy_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"receipt_version", "mode", "goal"}
+        }
+        legacy_receipt = {
+            **legacy_payload,
+            "receipt_sha256": sha256_json(legacy_payload),
+        }
+        transitional_payload = {
+            key: value for key, value in payload.items() if key != "receipt_version"
+        }
+        transitional_receipt = {
+            **transitional_payload,
+            "receipt_sha256": sha256_json(transitional_payload),
+        }
+        if existing == legacy_receipt:
+            return existing
+        if existing == transitional_receipt:
+            return existing
         if existing != receipt:
             raise PlanProtocolError("v2 activation receipt already exists with different evidence")
         return receipt
@@ -191,17 +213,27 @@ def validate_protocol_activation_receipt(
     errors: list[str] = []
     if claimed != sha256_json(payload):
         errors.append("external v2 activation receipt hash mismatch")
-    bindings = (
+    receipt_version = receipt.get("receipt_version")
+    if receipt_version not in (None, ACTIVATION_RECEIPT_V2):
+        errors.append("external v2 activation receipt version is unsupported")
+    transitional_identity = (
+        receipt_version is None
+        and "mode" in receipt
+        and "goal" in receipt
+    )
+    if receipt_version is None and (("mode" in receipt) != ("goal" in receipt)):
+        errors.append("external v2 activation receipt workflow identity is incomplete")
+    bindings = [
         "run_id",
         "parent_thread_id",
         "repo_root",
         "starting_commit",
         "run_started_at",
-        "mode",
-        "goal",
         "workflow_version",
         "plan_protocol_version",
-    )
+    ]
+    if receipt_version == ACTIVATION_RECEIPT_V2 or transitional_identity:
+        bindings.extend(("mode", "goal"))
     for field in bindings:
         expected = manifest.get(field)
         if field == "run_id" and isinstance(expected, str):

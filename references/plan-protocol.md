@@ -18,7 +18,7 @@ contract checks stay separable from environment reads.
 - A recorded version is immutable. Migration is an explicit command that switches
   `workflow_version` to `evidence-gated-delivery/plan-protocol-v2` and appends a
   `protocol_migrated` event preserving the previous event-chain head and prior workflow version.
-  Initialization and migration also persist a derived, write-once activation receipt under the
+  Initialization and migration also persist a derived, write-once, versioned activation receipt under the
   caller's Codex home, keyed by `run_id` and bound to the authenticated parent thread, activation
   event, run start, repository baseline, goal, mode, workflow, and protocol. Validation uses direct run lookup
   plus registry lookup anchored only on the authenticated parent thread, then compares every other
@@ -31,7 +31,9 @@ contract checks stay separable from environment reads.
   the write-once activation receipt before the manifest replacement, a retry reuses that receipt's
   exact event ID and timestamp after verifying all stable workflow-identity and legacy-manifest
   bindings; it never
-  invents conflicting activation evidence.
+  invents conflicting activation evidence. Current receipts bind goal and mode. Authenticated
+  legacy receipts written before the schema version remain valid under their original field set;
+  they are never rewritten or silently upgraded.
 
 ## Canonical issue body
 
@@ -158,8 +160,8 @@ Authorization is valid only when it binds:
 - an authenticated parent-user-message receipt containing the parent thread ID, exact draft
   SHA-256, exact message SHA-256, and message timestamp. The parent message must explicitly
   and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected,
-  or conflicting language is not authorization. Any later parent-user revocation for that draft
-  invalidates the receipt before the next write.
+  or conflicting language is not authorization. Any later parent-user message referencing that
+  draft hash invalidates the old receipt before the next write and requires a new explicit receipt.
 
 Any identity, repository, parent, capability, or draft drift invalidates authorization before a
 write. The transaction guard reauthenticates the parent approval immediately before every write.

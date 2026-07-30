@@ -38,7 +38,7 @@ affected modules, intended paths, user direction, and repository evidence. `none
 positive complete nonvisual coverage; `runtime_capture` requires current, timestamped,
 artifact-bound evidence covering every runtime scope ID but no
 ImageGen; `generative_mockup` applies to new visual concepts and inherently visual deliverables
-such as illustrations, icon sets, and brand or marketing assets, and requires the complete visual
+such as illustrations, icon sets, logos, artwork, photography, and brand or marketing assets, and requires the complete visual
 tournament and publication contract.
 Recompute it from intended paths at Implement Orientation and the actual diff at Review.
 

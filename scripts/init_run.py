@@ -18,6 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from plan_protocol import (
+    ACTIVATION_RECEIPT_V2,
     PLAN_PROTOCOL_V2,
     WORKFLOW_VERSION_V2,
     PlanProtocolError,
@@ -101,6 +102,12 @@ def main() -> int:
             "workflow_version": WORKFLOW_VERSION_V2,
             "plan_protocol_version": PLAN_PROTOCOL_V2,
         }
+        if not (
+            stranded.get("receipt_version") == ACTIVATION_RECEIPT_V2
+            or ("mode" in stranded and "goal" in stranded)
+        ):
+            stable_bindings.pop("mode")
+            stable_bindings.pop("goal")
         if not isinstance(stranded, dict) or any(
             stranded.get(field) != value for field, value in stable_bindings.items()
         ):

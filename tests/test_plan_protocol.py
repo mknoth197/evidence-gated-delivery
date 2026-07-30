@@ -268,6 +268,54 @@ class EventAndMigrationTests(unittest.TestCase):
         self.assertEqual(second["previous_event_sha256"], first["event_sha256"])
         self.assertEqual(protocol.validate_plan_events(events), [])
 
+    def test_activation_receipt_schema_compatibility_and_identity_binding(self):
+        manifest = {
+            "run_id": "activation-schema-compatibility",
+            "parent_thread_id": "019f0000-0000-7000-8000-000000000001",
+            "repo_root": "/repo",
+            "starting_commit": "a" * 40,
+            "run_started_at": "2026-07-28T10:00:00Z",
+            "mode": "research",
+            "goal": "Original goal",
+            "workflow_version": protocol.WORKFLOW_VERSION_V2,
+            "plan_protocol_version": protocol.PLAN_PROTOCOL_V2,
+            "plan_events": [],
+        }
+        event = protocol.append_plan_event(
+            manifest["plan_events"],
+            "protocol_initialized",
+            {"plan_protocol_version": protocol.PLAN_PROTOCOL_V2},
+            recorded_at="2026-07-29T10:00:00Z",
+            event_id="00000000-0000-4000-8000-000000000001",
+        )
+        receipt = protocol.record_protocol_activation(manifest, event)
+        self.assertEqual(
+            receipt["receipt_version"], protocol.ACTIVATION_RECEIPT_V2
+        )
+        self.assertEqual(protocol.validate_protocol_activation_receipt(manifest), (True, []))
+
+        changed = copy.deepcopy(manifest)
+        changed["goal"] = "Different goal"
+        self.assertTrue(
+            any(
+                "goal mismatch" in error
+                for error in protocol.validate_protocol_activation_receipt(changed)[1]
+            )
+        )
+
+        path = protocol.protocol_activation_receipt_path(manifest["run_id"])
+        legacy_payload = {
+            key: value
+            for key, value in receipt.items()
+            if key not in {"receipt_sha256", "receipt_version", "mode", "goal"}
+        }
+        legacy = {
+            **legacy_payload,
+            "receipt_sha256": protocol.sha256_json(legacy_payload),
+        }
+        path.write_text(json.dumps(legacy))
+        self.assertEqual(protocol.validate_protocol_activation_receipt(manifest), (True, []))
+
     def test_mutation_and_duplicate_event_are_rejected(self):
         events: list[dict] = []
         protocol.append_plan_event(

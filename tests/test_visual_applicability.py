@@ -535,33 +535,52 @@ Adjust an existing component state.
 """
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory) / "panel.png"
-            artifact.write_bytes(b"current panel")
+            artifact.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 32)
+            runtime_evidence = [
+                {
+                    "kind": "screenshot",
+                    "evidence": "Current Panel state",
+                    "scope_ids": ["D-001", "T-001", "M-001", "AC-001"],
+                    "artifact_path": str(artifact),
+                    "artifact_sha256": hashlib.sha256(
+                        artifact.read_bytes()
+                    ).hexdigest(),
+                    "captured_at": "2026-07-29T12:00:00Z",
+                }
+            ]
             inventory, errors = visual.build_plan_inventory(
                 body,
                 user_directions=["Use current runtime evidence."],
-                runtime_evidence=[
-                    {
-                        "kind": "screenshot",
-                        "evidence": "Current Panel state",
-                        "scope_ids": ["D-001", "T-001", "M-001", "AC-001"],
-                        "artifact_path": str(artifact),
-                        "artifact_sha256": hashlib.sha256(
-                            artifact.read_bytes()
-                        ).hexdigest(),
-                        "captured_at": "2026-07-29T12:00:00Z",
-                    }
-                ],
+                runtime_evidence=runtime_evidence,
                 runtime_evidence_not_before="2026-07-29T11:00:00Z",
             )
-        self.assertEqual(errors, [])
-        self.assertTrue(inventory["planned_paths"][0]["runtime_evidence_sufficient"])
-        receipt = visual.evaluate_visual_applicability(
-            inventory,
-            phase="plan",
-            authoritative_issue_body=body,
-            declared_ids=declarations(inventory),
-        )
+            self.assertEqual(errors, [])
+            self.assertTrue(
+                inventory["planned_paths"][0]["runtime_evidence_sufficient"]
+            )
+            receipt = visual.evaluate_visual_applicability(
+                inventory,
+                phase="plan",
+                authoritative_issue_body=body,
+                declared_ids=declarations(inventory),
+            )
         self.assertEqual(receipt["evidence_mode"], "runtime_capture")
+        _, _, stale_errors = visual.validate_disposition(
+            receipt,
+            body,
+            phase="plan",
+            require_embedded_inventory=True,
+            authoritative_user_directions=["Use current runtime evidence."],
+            authoritative_runtime_evidence=runtime_evidence,
+            runtime_evidence_not_before="2026-07-29T11:00:00Z",
+        )
+        self.assertTrue(
+            any(
+                "authoritative issue text and runtime evidence" in error
+                or "does not match recomputation" in error
+                for error in stale_errors
+            )
+        )
 
     def test_runtime_evidence_requires_readable_matching_bytes_and_aware_time(self):
         base = {
@@ -576,7 +595,7 @@ Adjust an existing component state.
         )
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory) / "panel.png"
-            artifact.write_bytes(b"current panel")
+            artifact.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 32)
             valid = dict(
                 base,
                 artifact_path=str(artifact),
@@ -586,6 +605,18 @@ Adjust an existing component state.
             )
             self.assertTrue(
                 visual.runtime_evidence_sufficient("T-001", [valid])
+            )
+            wrong_type = Path(directory) / "hosts.png"
+            wrong_type.write_bytes(b"127.0.0.1 localhost\n")
+            forged_type = dict(
+                valid,
+                artifact_path=str(wrong_type),
+                artifact_sha256=hashlib.sha256(
+                    wrong_type.read_bytes()
+                ).hexdigest(),
+            )
+            self.assertFalse(
+                visual.runtime_evidence_sufficient("T-001", [forged_type])
             )
             naive = dict(valid, captured_at="2026-07-29T12:00:00")
             self.assertFalse(
@@ -664,6 +695,9 @@ Create a marketing asset and hero image while recording visual-applicability.
         for deliverable, path in (
             ("product illustration", "assets/product-illustration.svg"),
             ("icon set", "assets/product-icons.svg"),
+            ("company logo", "scripts/generate_asset.py"),
+            ("cover artwork", "scripts/generate_asset.py"),
+            ("product photograph", "scripts/generate_asset.py"),
         ):
             with self.subTest(deliverable=deliverable):
                 body = f"""# Plan

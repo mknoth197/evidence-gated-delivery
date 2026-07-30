@@ -79,8 +79,8 @@ exact draft SHA-256, exact message SHA-256, and message timestamp. The message i
 and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected, or
 conflicting language fails closed. Approval of a Plan, a previous draft, or
 “continue” from before the draft was frozen is not graph authorization. Reauthenticate the receipt
-before every write and reject any later parent-user revocation for that draft. Drift invalidates
-authorization. Never broaden authorization to later edits or
+before every write. Any later parent-user message referencing that draft hash invalidates the old
+receipt and requires a new explicit authorization receipt. Drift invalidates authorization. Never broaden authorization to later edits or
 unknown recovery actions.
 
 ## Transaction and action ledger
