@@ -78,6 +78,7 @@ def valid_png(data: bytes) -> bool:
             if (
                 saw_plte
                 or saw_idat
+                or b"tRNS" in singleton_ancillary
                 or color_type in {0, 4}
                 or length < 3
                 or length > 768
@@ -145,14 +146,6 @@ def valid_png(data: bytes) -> bool:
                     and second <= 60
                 ):
                     return False
-        elif chunk_type == b"tEXt":
-            keyword, separator, _text = payload.partition(b"\0")
-            if (
-                not separator
-                or not 1 <= len(keyword) <= 79
-                or b"\0" in keyword
-            ):
-                return False
         elif chunk_type and chunk_type[0] & 0x20 == 0:
             return False
         elif chunk_type:

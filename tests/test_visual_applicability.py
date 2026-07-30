@@ -710,6 +710,23 @@ Adjust an existing component state.
                         ),
                     ),
                 ),
+                (
+                    "transparency-before-optional-palette.png",
+                    png_bytes(
+                        b"\x00\x00\x00\x00",
+                        color_type=2,
+                        extra_chunks=(
+                            (b"tRNS", b"\x00" * 6),
+                            (b"PLTE", b"\x00\x00\x00"),
+                        ),
+                    ),
+                ),
+                (
+                    "invalid-text-keyword.png",
+                    png_bytes(
+                        extra_chunks=((b"tEXt", b" bad  key\0text"),)
+                    ),
+                ),
             ):
                 invalid_png = Path(directory) / name
                 invalid_png.write_bytes(content)
@@ -856,36 +873,43 @@ Create a {deliverable} while recording visual-applicability.
             "workflow milestone certificate",
             "service award medallion",
             "documentation commemorative plaque",
+            "launch badge for API documentation",
+            "commemorative plaque",
+            "award medallion",
         ):
-            with self.subTest(deliverable=deliverable):
-                body = f"""# Plan
+            for verb in ("Create", "Build", "Make", "Craft"):
+                with self.subTest(deliverable=deliverable, verb=verb):
+                    body = f"""# Plan
 
 `D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
 `M-001` through `M-001`
 
 ## Problem Statement
-Create a {deliverable}.
+{verb} a {deliverable}.
 
 ## Tasks
-- [ ] **T-001 — Create {deliverable}.** Objective: create the requested deliverable. Context: launch. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
+- [ ] **T-001 — {verb} {deliverable}.** Objective: {verb.lower()} the requested deliverable. Context: launch. Affected modules: `scripts/generate_asset.py`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: design. `depends_on: []`.
 
 ## Acceptance Criteria
 - WHEN complete, THE SYSTEM SHALL provide the requested deliverable. <!-- AC-001 -->
 """
-                inventory, errors = visual.build_plan_inventory(
-                    body, user_directions=["Use the workflow's visual policy."]
-                )
-                self.assertEqual(errors, [])
-                receipt = visual.evaluate_visual_applicability(
-                    inventory,
-                    phase="plan",
-                    authoritative_issue_body=body,
-                    declared_ids=declarations(inventory),
-                )
-                self.assertEqual(
-                    receipt["decision"], visual.BLOCKED_DECISION
-                )
-                self.assertIsNone(receipt["evidence_mode"])
+                    inventory, errors = visual.build_plan_inventory(
+                        body,
+                        user_directions=[
+                            "Use the workflow's visual policy."
+                        ],
+                    )
+                    self.assertEqual(errors, [])
+                    receipt = visual.evaluate_visual_applicability(
+                        inventory,
+                        phase="plan",
+                        authoritative_issue_body=body,
+                        declared_ids=declarations(inventory),
+                    )
+                    self.assertEqual(
+                        receipt["decision"], visual.BLOCKED_DECISION
+                    )
+                    self.assertIsNone(receipt["evidence_mode"])
 
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan

@@ -265,7 +265,8 @@ def _intent_group(text: str) -> str:
         maxsplit=1,
     )[0]
     creation = re.search(
-        r"\b(?:create|design|generate|produce|render|draw|illustrate|photograph)"
+        r"\b(?:create|design|generate|produce|render|draw|illustrate|photograph|"
+        r"build|make|craft|compose|fashion|forge|fabricate|construct|prepare)"
         r"\s+(?:(?:an?|the|new|requested)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
