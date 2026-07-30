@@ -288,6 +288,34 @@ Create a marketing asset and hero image while recording visual-applicability.
         )
         self.assertEqual(receipt["evidence_mode"], "generative_mockup")
 
+    def test_policy_enum_cannot_mask_visual_deliverable_outside_policy_predicate(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Create a hero image and classify its workflow as VISUAL_REQUIRED.
+
+## Tasks
+- [ ] **T-001 — Create hero image.** Objective: create the asset. Context: launch. Affected modules: `web/hero-image.png`. Requirements: produce it. Verification: inspect it. Complete when approved. Owner lane: web. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL provide the hero image. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Use the visual policy."]
+        )
+        self.assertEqual(errors, [])
+        receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(receipt["decision"], "VISUAL_REQUIRED")
+        self.assertEqual(receipt["evidence_mode"], "generative_mockup")
+
     def test_broader_visual_deliverables_cannot_fall_through_to_nonvisual(self):
         for deliverable, path in (
             ("product illustration", "assets/product-illustration.svg"),
@@ -625,6 +653,64 @@ Update a validator workflow.
                     ),
                     validation_errors,
                 )
+
+    def test_authoritative_hi_fi_plan_resolves_none_across_plan_and_review(self):
+        fixtures = Path(__file__).parent / "fixtures"
+        body = (fixtures / "hi_fi_planning_issue_2.md").read_text(encoding="utf-8")
+        self.assertEqual(
+            hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            "bf4deb13403b933b6b2e047865f1df2424998b3677662df63e174d134642ec3d",
+        )
+        direction = (
+            "I want you to tweak the logic of our workflow that intuitively knows "
+            "when and when not to create imagegen mockups - if the surrounding code "
+            "does not have a related front-end or something of that nature (flush "
+            "this out more for criteria; that way we do not burn tokens and time "
+            "for images we should not be creating)"
+        )
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=[direction]
+        )
+        self.assertEqual(errors, [])
+        plan_receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(plan_receipt["status"], "resolved")
+        self.assertEqual(plan_receipt["decision"], "VISUAL_NOT_APPLICABLE")
+        self.assertEqual(plan_receipt["evidence_mode"], "none")
+
+        actual_paths = [
+            line
+            for line in (
+                fixtures / "hi_fi_planning_changed_paths.txt"
+            ).read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        self.assertGreaterEqual(len(actual_paths), 50)
+        review_inventory = copy.deepcopy(inventory)
+        review_inventory.pop("planned_paths")
+        review_inventory["actual_paths"] = [
+            {
+                "id": f"P-{index:03d}",
+                "kind": "nonvisual",
+                "path": path,
+                "source": path,
+                "provenance": "exact base-to-head changed path fixture",
+            }
+            for index, path in enumerate(actual_paths, 1)
+        ]
+        review_receipt = visual.evaluate_visual_applicability(
+            review_inventory,
+            phase="review",
+            authoritative_issue_body=body,
+            declared_ids=declarations(review_inventory),
+        )
+        self.assertEqual(review_receipt["status"], "resolved")
+        self.assertEqual(review_receipt["decision"], "VISUAL_NOT_APPLICABLE")
+        self.assertEqual(review_receipt["evidence_mode"], "none")
 
 
 if __name__ == "__main__":

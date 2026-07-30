@@ -96,7 +96,8 @@ NONVISUAL_OBJECT_HEAD = re.compile(
     r"protocols?|markers?|records?|adapters?|modules?|packages?|"
     r"dependencies|types?|fields?|commands?|jobs?|settings?|prompts?|"
     r"skills?|reliability|performance|latency|authentication|planning|"
-    r"implementation|validation)\b\s*$"
+    r"implementation|validation|recovery|safety|portability|provenance|"
+    r"licensing|packaging|verification|orchestration)\b\s*$"
 )
 NONVISUAL_OBJECT_PHRASE = re.compile(
     r"^\s*(?:validation|validator|test|command|api)\s+"
@@ -116,6 +117,43 @@ NONVISUAL_OBJECT_PHRASE_VERBS = frozenset(
         "validate",
         "verify",
     }
+)
+NONVISUAL_SYSTEM_VERBS = frozenset(
+    {
+        "authenticate",
+        "block",
+        "canonicalize",
+        "classify",
+        "continue",
+        "cross-check",
+        "default",
+        "enter",
+        "exclude",
+        "fail",
+        "include",
+        "invalidate",
+        "normalize",
+        "parse",
+        "prevent",
+        "prohibit",
+        "recompute",
+        "record",
+        "require",
+        "resume",
+        "reuse",
+        "select",
+        "stop",
+        "use",
+        "verify",
+    }
+)
+VISUAL_POLICY_TOKEN = re.compile(
+    r"\b(?:visual-applicability/v1|visual_required|visual_not_applicable|"
+    r"runtime_capture|generative_mockup|blocked_pending_visual_clarification)\b"
+)
+VISUAL_POLICY_ACTION = re.compile(
+    r"\b(?:classif(?:y|ies)|selects?|recomputes?|evaluates?|normalizes?|"
+    r"enters?|blocks?|requires?|omits?|verifies?|defaults?)\b"
 )
 
 
@@ -301,6 +339,25 @@ def _intent_group(text: str) -> str:
     lowered = text.lower()
     if not lowered.strip():
         return "nonvisual"
+    policy_subject = re.search(
+        r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
+        r"(?:classify|select|recompute|evaluate|normalize|enter|block|require|"
+        r"omit|verify|default)\b",
+        lowered,
+    )
+    if (
+        VISUAL_POLICY_TOKEN.search(lowered)
+        and VISUAL_POLICY_ACTION.search(lowered)
+        and policy_subject
+    ):
+        return "nonvisual"
+    if re.search(
+        r"\b(?:implement|bundle|validate|recompute|record|integrate|test)\b"
+        r"[^.;:]{0,100}\b(?:visual-applicability/v1|graph-policy/v1|"
+        r"plan-to-graph)\b",
+        lowered,
+    ):
+        return "nonvisual"
     inferred = _inferred_kind_group({"source": text})
     if inferred in {"generative", "runtime"}:
         return inferred
@@ -313,7 +370,7 @@ def _intent_group(text: str) -> str:
         r"(?:^\s*(?P<leading_verb>create|design|generate|produce|render|draw|illustrate|"
         r"photograph|build|make|craft|compose|fashion|forge|fabricate|"
         r"construct|prepare|provide|deliver|publish|emit)|"
-        r"\bshall\s+(?P<ears_verb>[a-z][a-z-]*))"
+        r"\bshall\s+(?:(?:not|remotely)\s+)?(?P<ears_verb>[a-z][a-z-]*))"
         r"\s+(?:(?:an?|the|new|requested)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
@@ -321,6 +378,21 @@ def _intent_group(text: str) -> str:
     if creation:
         action = creation.group("leading_verb") or creation.group("ears_verb")
         created_object = creation.group("object").strip()
+        if (
+            action in NONVISUAL_SYSTEM_VERBS
+            and re.search(r"\b(?:system|validator)\s+shall\b", intent_clause)
+        ):
+            return "nonvisual"
+        if (
+            action == "emit"
+            and re.search(
+                r"\b(?:findings?|receipts?|events?|records?|validation results?|"
+                r"test outputs?|command outputs?|api responses?)\b",
+                created_object,
+            )
+            and not re.search(r"\b(?:visual|image|badge|mockup|screen)\b", created_object)
+        ):
+            return "nonvisual"
         if not (
             NONVISUAL_OBJECT_HEAD.search(created_object)
             or (
