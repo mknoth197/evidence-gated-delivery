@@ -19,7 +19,9 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
     "research_started_at": "",
     "research_completed_at": "",
     "plan_started_at": "",
-    "plan_completed_at": ""
+    "plan_completed_at": "",
+    "implement_completed_at": "",
+    "review_completed_at": ""
   },
   "mode": "orchestrate",
   "goal": "User goal",
@@ -178,6 +180,8 @@ are never validation authority. Screenshot and visual-regression evidence curren
 strictly parsed non-interlaced PNG with bounded compressed/decompressed size, valid critical
 chunks, CRCs, reconstructed scanlines, and indexed-color palette rules; unsupported recording
 containers and unvalidated ancillary PNG chunks fail closed.
+The validator uses the explicit, validated phase completion timestamp as the single upper
+freshness bound for that phase; evidence checks never read an ambient wall clock.
 but no ImageGen. `generative_mockup` requires the complete visual tournament and durable
 publication receipts.
 

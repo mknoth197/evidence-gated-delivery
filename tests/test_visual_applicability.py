@@ -989,6 +989,73 @@ Create a {deliverable} while recording visual-applicability.
                     )
                     self.assertIsNone(receipt["evidence_mode"])
 
+    def test_complete_bound_scope_resolves_unknown_nonvisual_goal(self):
+        for goal in (
+            "Improve build performance",
+            "Reduce CI latency",
+            "Harden authentication",
+        ):
+            with self.subTest(goal=goal):
+                body = f"""# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+{goal}.
+
+## Tasks
+- [ ] **T-001 — {goal}.** Objective: improve the validator workflow. Context: automation. Affected modules: `scripts/tool.py`. Requirements: preserve behavior. Verification: run tests. Complete when verified. Owner lane: core. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN invoked, THE SYSTEM SHALL pass validation. <!-- AC-001 -->
+"""
+                inventory, errors = visual.build_plan_inventory(
+                    body,
+                    user_directions=[
+                        "Do not generate images for this nonvisual workflow."
+                    ],
+                )
+                self.assertEqual(errors, [])
+                receipt = visual.evaluate_visual_applicability(
+                    inventory,
+                    phase="plan",
+                    authoritative_issue_body=body,
+                    declared_ids=declarations(inventory),
+                )
+                self.assertEqual(receipt["evidence_mode"], "none")
+
+    def test_ambiguous_acceptance_criterion_cannot_become_nonvisual(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Update a validator workflow.
+
+## Tasks
+- [ ] **T-001 — Update validator.** Objective: update validation. Context: automation. Affected modules: `scripts/tool.py`. Requirements: preserve behavior. Verification: run tests. Complete when verified. Owner lane: core. `depends_on: []`.
+
+## Acceptance Criteria
+- WHEN complete, THE SYSTEM SHALL provide a launch badge. <!-- AC-001 -->
+"""
+        inventory, errors = visual.build_plan_inventory(
+            body, user_directions=["Use the visual policy."]
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            inventory["acceptance_criteria"][0]["kind"],
+            "ambiguous_visual_intent",
+        )
+        receipt = visual.evaluate_visual_applicability(
+            inventory,
+            phase="plan",
+            authoritative_issue_body=body,
+            declared_ids=declarations(inventory),
+        )
+        self.assertEqual(receipt["decision"], visual.BLOCKED_DECISION)
+
     def test_user_direction_directive_cannot_be_forged(self):
         body = """# Plan
 

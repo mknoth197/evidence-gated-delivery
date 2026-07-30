@@ -203,6 +203,10 @@ def validate_timeline(data: dict[str, Any], phase: str, errors: list[str]) -> No
     required = ["research_started_at", "research_completed_at"]
     if phase in {"plan", "orchestrate-preapproval", "implement", "review"}:
         required += ["plan_started_at", "plan_completed_at"]
+    if phase in {"implement", "review"}:
+        required += ["implement_completed_at"]
+    if phase == "review":
+        required += ["review_completed_at"]
     values = {field: timestamp(timeline.get(field)) for field in required}
     for field, value in values.items():
         if value is None:

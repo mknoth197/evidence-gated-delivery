@@ -134,7 +134,16 @@ def extract_scope_inventory(
             if module["task_id"] == task_id
         }
         if canonical_tasks is not None:
-            task_intent = source
+            task_intent = re.split(
+                r"(?i)\bAffected modules:",
+                re.sub(
+                    r"(?i)^[ \t]*[-*][ \t]+\[[ xX]\][ \t]+\*\*T-\d{3}"
+                    r"[ \t]+[—-][ \t]+",
+                    "",
+                    source,
+                ),
+                maxsplit=1,
+            )[0].replace("**", "")
         else:
             assert modules_match is not None
             intent_match = re.match(
@@ -154,6 +163,12 @@ def extract_scope_inventory(
             task_group = "runtime"
         elif intent_group == "ambiguous":
             task_group = "ambiguous"
+        elif intent_group == "unknown":
+            task_group = (
+                "nonvisual"
+                if module_groups == {"nonvisual"}
+                else "ambiguous"
+            )
         elif "runtime" in module_groups:
             task_group = (
                 "runtime"
@@ -247,6 +262,8 @@ def extract_scope_inventory(
             kind = "new_visual_concept"
         elif source_group == "runtime":
             kind = "existing_component_state"
+        elif source_group == "ambiguous":
+            kind = "ambiguous_visual_intent"
         acceptance_entries.append(
             {
                 "id": value,

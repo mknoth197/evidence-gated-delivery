@@ -135,6 +135,8 @@ def main() -> int:
             "research_completed_at": "",
             "plan_started_at": "",
             "plan_completed_at": "",
+            "implement_completed_at": "",
+            "review_completed_at": "",
         },
         "mode": args.mode,
         "goal": args.goal,

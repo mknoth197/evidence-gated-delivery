@@ -541,9 +541,12 @@ def add_plan_errors(
         authoritative_paths = None
         if visual_phase == "review":
             authoritative_paths = review_paths
-        runtime_upper_phase = (
-            "plan" if visual_phase == "implement-orientation" else visual_phase
-        )
+        runtime_upper_field = {
+            "plan": "plan_completed_at",
+            "implement-orientation": "plan_completed_at",
+            "implement": "implement_completed_at",
+            "review": "review_completed_at",
+        }.get(visual_phase)
         validated_mode, _inventory, disposition_errors = deps.validate_disposition(
             disposition,
             implementation_body,
@@ -554,8 +557,10 @@ def add_plan_errors(
             authoritative_user_directions=data.get("visual_user_directions"),
             authoritative_runtime_evidence=data.get("runtime_visual_evidence"),
             runtime_evidence_not_before=data.get("run_started_at"),
-            runtime_evidence_not_after=data.get("phase_timeline", {}).get(
-                f"{runtime_upper_phase}_completed_at"
+            runtime_evidence_not_after=(
+                data.get("phase_timeline", {}).get(runtime_upper_field)
+                if runtime_upper_field
+                else None
             ),
         )
         errors.extend(disposition_errors)

@@ -288,6 +288,9 @@ Goal: choose and freeze what should be built.
    If any deliverable cannot be positively classified as visual or nonvisual, block for
    bounded clarification instead of defaulting to `none`. Classify the created object's head noun
    separately from modifier or surrounding API, service, workflow, or documentation context.
+   An otherwise unknown goal may resolve to `none` only when its exact bound tasks and affected
+   modules provide complete positive nonvisual coverage. Ambiguity in a deliverable, task, or
+   acceptance criterion survives and blocks.
    Capture the current authenticated product surface only when the selected mode requires it.
    An assumed shell may illustrate a research concept, but it is not eligible to be normative or to
    enter the mockup-accounting matrix.

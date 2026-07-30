@@ -290,8 +290,10 @@ def _intent_group(text: str) -> str:
         maxsplit=1,
     )[0]
     creation = re.search(
-        r"\b(?:create|design|generate|produce|render|draw|illustrate|photograph|"
-        r"build|make|craft|compose|fashion|forge|fabricate|construct|prepare)"
+        r"(?:^\s*(?:create|design|generate|produce|render|draw|illustrate|"
+        r"photograph|build|make|craft|compose|fashion|forge|fabricate|"
+        r"construct|prepare|provide|deliver|publish|emit)|"
+        r"\bshall\s+(?:provide|deliver|publish|emit))"
         r"\s+(?:(?:an?|the|new|requested)\s+)?"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
@@ -301,7 +303,7 @@ def _intent_group(text: str) -> str:
         if not NONVISUAL_OBJECT_HEAD.search(created_object):
             return "ambiguous"
     leading_action = re.match(
-        r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the|new|existing|requested)\s+)?"
+        r"^\s*[a-z][a-z-]*\s+(?:(?:an?|the)\s+)"
         r"(?P<object>.*?)(?=\s+\b(?:for|to|using|with|in|on|while|that|which|whose)\b|[.;:]|$)",
         intent_clause,
     )
@@ -315,7 +317,7 @@ def _intent_group(text: str) -> str:
         lowered,
     ):
         return "nonvisual"
-    return inferred or "ambiguous"
+    return inferred or "unknown"
 
 
 def _direction_entry(identifier: str, source: str, order: int) -> dict[str, Any]:
