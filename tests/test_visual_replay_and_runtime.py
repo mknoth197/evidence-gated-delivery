@@ -328,6 +328,27 @@ Create a marketing asset and hero image while recording visual-applicability.
             ("require", "a visual report", "generative_mockup"),
             ("include", "a mood board as the requested deliverable", "generative_mockup"),
             ("classify", "a hero image as VISUAL_REQUIRED", "generative_mockup"),
+            (
+                "require",
+                "a fresh independent recheck and a hero image",
+                "generative_mockup",
+            ),
+            (
+                "include",
+                "the bundled plan-auditor and plan-to-graph skills and a visual report",
+                "generative_mockup",
+            ),
+            (
+                "classify",
+                "the plan as GRAPH_REQUIRED and provide a screenshot",
+                "generative_mockup",
+            ),
+            ("fail", "closed and create a hero image", "generative_mockup"),
+            (
+                "classify",
+                "the workflow as VISUAL_REQUIRED and create a hero image",
+                "generative_mockup",
+            ),
         ):
             with self.subTest(verb=verb, deliverable=deliverable):
                 body = f"""# Plan

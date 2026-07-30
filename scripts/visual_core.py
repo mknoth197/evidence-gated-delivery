@@ -127,6 +127,13 @@ VISUAL_POLICY_TOKEN = re.compile(
 def _is_visual_policy_statement(text: str) -> bool:
     if not VISUAL_POLICY_TOKEN.search(text):
         return False
+    if re.search(
+        r"\band\s+(?:shall\s+)?(?!(?:not\s+require\s+imagegen)\b)"
+        r"(?:create|generate|produce|render|display|show|present|expose|"
+        r"provide|deliver|publish|require|include|classify)\b",
+        text,
+    ):
+        return False
     subject = r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
     return any(
         re.search(subject + predicate, text)
@@ -149,6 +156,15 @@ def _is_visual_policy_statement(text: str) -> bool:
 
 
 def _is_nonvisual_system_statement(text: str) -> bool:
+    if re.search(
+        r"\band\s+(?:(?:a|an|the)\s+|(?:shall\s+)?"
+        r"(?!(?:require\s+(?:its hash|a fresh independent recheck|"
+        r"a newly frozen draft))\b)(?:create|generate|produce|"
+        r"render|display|show|present|expose|provide|deliver|publish|require|"
+        r"include|classify)\b)",
+        text,
+    ):
+        return False
     subject = r"\b(?:system|validator)\s+shall\s+(?:(?:not|remotely)\s+)?"
     return any(
         re.search(subject + predicate, text)
@@ -366,8 +382,6 @@ def _intent_group(text: str) -> str:
         return "nonvisual"
     if _is_visual_policy_statement(lowered):
         return "nonvisual"
-    if _is_nonvisual_system_statement(lowered):
-        return "nonvisual"
     if any(
         re.search(pattern, lowered)
         for pattern in (
@@ -380,6 +394,8 @@ def _intent_group(text: str) -> str:
     inferred = _inferred_kind_group({"source": text})
     if inferred in {"generative", "runtime"}:
         return inferred
+    if _is_nonvisual_system_statement(lowered):
+        return "nonvisual"
     intent_clause = re.split(
         r"(?i)\b(?:affected modules|requirements|verification|complete when):",
         lowered,
