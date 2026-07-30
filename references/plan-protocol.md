@@ -4,6 +4,12 @@
 Evidence-Gated Delivery runs. GitHub implementation issues remain the only normative Plan
 artifacts; manifests and checkpoint receipts are execution evidence.
 
+The stable `plan_protocol.py` entrypoint is a compatibility facade. Focused modules own protocol
+core and activation storage, canonical task parsing and linting, hash-chained events and migration,
+audit receipts, and protected graph state. `validate_run.py` remains phase orchestration; trace,
+GitHub graph I/O, Plan, Review, and cross-phase gates live behind injected adapters so pure
+contract checks stay separable from environment reads.
+
 ## Versioning
 
 - New runs record `plan_protocol_version: plan-protocol/v2`.
@@ -76,6 +82,9 @@ Each parsed task receipt contains:
 
 The receipt records the version, disposition, task count, edge count, owner lanes, task-set hash,
 and evaluation timestamp. Agents do not select the result.
+For `NO_GRAPH`, capability, draft, authorization, action, and remote-state evidence must all be
+empty. When remote checks are enabled, the parent issue must also have no workflow-owned child
+marker; contradictory mutation evidence fails closed.
 
 ## Plan audit
 
@@ -90,6 +99,12 @@ and evaluation timestamp. Agents do not select the result.
   bounded question when needed, targeted patch, verification implication, downstream instruction,
   and disposition;
 - predecessor audit and finding IDs for a remediation recheck.
+
+The authenticated callback includes `PLAN_AUDIT_RECEIPT_SHA256: <sha256>`, computed from the
+canonical semantic projection of the audit ID, kind, reviewed body hash, evidence IDs, findings,
+predecessor lineage, and derived PASS/BLOCKED verdict. Validation rejects a callback whose marker
+does not match the exact manifest receipt, even when callback and receipt hashes are independently
+well formed.
 
 Blocker and High findings require a fresh independent recheck with `verified_fixed` disposition.
 Medium findings require `verified_fixed`, or `accepted`/`deferred` with nonempty owner and

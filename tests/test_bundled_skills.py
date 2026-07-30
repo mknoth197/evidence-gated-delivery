@@ -168,6 +168,43 @@ class BundledSkillTests(unittest.TestCase):
             self.assertEqual(drift.returncode, 1)
             self.assertIn("'status': 'DRIFT'", drift.stdout)
 
+    def test_validation_modules_remain_focused(self):
+        scripts = ROOT / "scripts"
+        facades = ("plan_protocol.py", "visual_applicability.py")
+        focused = (
+            "collaboration_receipts.py",
+            "github_graph_adapter.py",
+            "plan_audits.py",
+            "plan_events.py",
+            "plan_graph.py",
+            "plan_phase_validation.py",
+            "plan_protocol_core.py",
+            "plan_tasks.py",
+            "review_phase_validation.py",
+            "trace_validation.py",
+            "visual_core.py",
+            "visual_inventory.py",
+            "visual_policy.py",
+            "workflow_gate_validation.py",
+        )
+        for name in facades:
+            self.assertLess(
+                len((scripts / name).read_text().splitlines()),
+                100,
+                f"{name} must remain a thin compatibility facade",
+            )
+        for name in focused:
+            self.assertLess(
+                len((scripts / name).read_text().splitlines()),
+                700,
+                f"{name} has accumulated unrelated validation responsibilities",
+            )
+        self.assertLess(
+            len((scripts / "validate_run.py").read_text().splitlines()),
+            1000,
+            "validate_run.py must remain orchestration, not a god validator",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

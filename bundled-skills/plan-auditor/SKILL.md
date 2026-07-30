@@ -94,6 +94,10 @@ clarify.” A targeted patch changes only the affected issue section and preserv
 Return an immutable `collaboration_delegated` receipt with audit kind, UUID agent identity and path,
 exact role marker, reviewed body SHA-256, start and completion timestamps, evidence IDs, findings,
 predecessor lineage when applicable, callback SHA-256, and a SHA-256 of the canonical receipt.
+Include `PLAN_AUDIT_RECEIPT_SHA256: <sha256>` in the authenticated callback. Compute the hash from
+the canonical JSON projection returned by `plan_audit_callback_payload`: audit ID, kind, reviewed
+body hash, evidence IDs, findings, predecessor lineage, and the derived PASS/BLOCKED verdict. This
+binds the callback's semantic findings to the manifest receipt consumed by validation.
 State whether Plan is blocked; never call the phase `VALID`. The Evidence-Gated Delivery validator
 alone issues phase validity.
 
