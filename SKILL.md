@@ -242,12 +242,25 @@ instruction is recorded in `released_stop_gates` with its timestamp and exact ev
 
 ### Parallelism
 
-- Freeze shared contracts before parallel work.
-- Delegate bounded outcomes with disjoint write scopes.
-- Tell workers that other agents may edit concurrently and not to revert unrelated changes.
-- Keep coupled integration with one accountable orchestrator.
-- Use fresh read-only agents for judging and final review.
-- Treat reviewer comments as hypotheses; verify before acting.
+The orchestrator owns the goal, authority envelope, integration, and user communication in every
+tier. Threads are a core capability, not a Deep-only ceremony. Use
+`scripts/delegation_router.py` internally to select `solo`, `one_off`,
+`parallel_workstreams`, or `phase_isolated` work.
+
+- Spawn a thread only for an independent outcome that repays coordination cost: a slow or external
+  investigation, an isolated workstream, or an independent challenge.
+- Quick defaults to solo; use one one-off investigator only for a genuinely independent wait or
+  question. Balanced may fan out up to three disjoint workstreams. Deep uses phase-isolated work
+  and its required independent roles.
+- Every child receives a Delegation Charter: objective, role, owned scope, inputs, inherited
+  allowed actions, completion evidence, and escalation conditions. It inherits the parent's
+  progress corridor and cannot ask the user to re-authorize ordinary dependent work.
+- Freeze shared contracts before parallel writes. Tell workers that other agents may edit
+  concurrently and not to revert unrelated changes.
+- Synthesize a completed cohort into the next material action before spawning another cohort. Do
+  not re-delegate an answered question unless new evidence invalidates its answer.
+- Keep coupled integration with one accountable orchestrator. Use fresh read-only agents for
+  independent challenge and final review; treat reviewer comments as hypotheses and verify them.
 
 ### Safety
 

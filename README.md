@@ -84,6 +84,7 @@ SKILL.md                 Workflow instructions for an agent harness
 references/              Phase contracts, role contracts, publication, retrospective rubric
 scripts/init_run.py      Creates a durable run manifest
 scripts/intent_router.py Deterministically grades the delivery tier and authority envelope
+scripts/delegation_router.py Selects a solo, one-off, parallel, or phase-isolated task topology
 scripts/validate_tier.py Validates Quick and Balanced receipts; delegates Deep to the existing validator
 scripts/validate_run.py  Validates phase transitions and writes receipts
 scripts/preflight_plan.py Validates a draft plan before publication

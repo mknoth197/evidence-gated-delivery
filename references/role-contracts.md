@@ -15,6 +15,24 @@ Owns:
 
 The orchestrator may delegate work but never delegates accountability.
 
+## Delegation Charter
+
+Use this charter for every one-off task and subagent, regardless of tier:
+
+```text
+Objective: one independently completable outcome
+Role: investigator | workstream owner | independent reviewer | required Deep role
+Owned scope: files, systems, or question boundary
+Inputs: frozen contract and evidence the child may rely on
+Allowed actions: subset of the parent progress corridor
+Completion evidence: concrete result, changed paths, checks, or read-back
+Escalation conditions: only hard boundary, material scope expansion, or contradictory evidence
+```
+
+The child inherits the parent's authority corridor. It must continue ordinary dependent work and
+return a bounded result to the orchestrator; it must not turn a local uncertainty into a new user
+approval request. The orchestrator synthesizes completed results before starting another cohort.
+
 ## Tournament Contestants
 
 Spawn exactly three independent contestant subagents.
