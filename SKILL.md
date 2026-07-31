@@ -24,13 +24,15 @@ RESEARCH -> research artifact -> PLAN -> implementation artifact -> IMPLEMENT ->
 Every phase must revalidate its input against current reality. Durable artifacts, not chat memory,
 carry authority between phases.
 
-Use `scripts/intent_router.py` to record the tier decision from scope, ambiguity, reversibility,
-data risk, novelty, external impact, and hard-stop signals. A user may request a higher tier.
+Use `scripts/intent_router.py` internally to assess scope, ambiguity, reversibility, data risk,
+novelty, external impact, and hard-stop signals. A user may request a higher tier, but never has
+to invoke a tier, provide a routing file, or repeat an approval in a prescribed phrase.
 Protected external writes, destructive or irreversible actions, production or release actions,
 and sensitive-data access always select Deep and require explicit authority. For ordinary scoped
-work, direct user intent implies authority to inspect, edit, and test; do not demand an exact
-approval phrase before performing those normal steps. Ask only when a proposed action crosses that
-authority envelope or materially expands scope.
+work, direct user intent implies authority to inspect, edit, test, reconcile, and complete
+ordinary dependent recovery steps. Treat this as a **progress corridor**: batch those actions and
+keep moving until a proposed action crosses a hard boundary or materially expands scope. Do not
+turn a discovered sub-step into a new approval question.
 
 For Deep, `orchestrate` proceeds autonomously from Research through Plan and Implementation when
 every deterministic gate passes and a fresh independent Phase Transition Judge rates the completed
@@ -48,8 +50,9 @@ operations.
 Read [artifact-publication.md](references/artifact-publication.md) before Plan publication.
 Read [continuous-improvement.md](references/continuous-improvement.md) before beginning any run.
 
-Create the run manifest before substantive work. For Quick and Balanced, first run the router and
-pass its JSON result with `--routing-decision`; legacy initialization defaults to Deep:
+Create a run manifest before substantive **Deep** work. Quick and Balanced work may keep a compact
+internal evidence note; create a manifest only when durable handoff or a validator receipt is
+actually useful. The router is an internal decision aid, not a user-facing ceremony:
 
 ```text
 python3 <skill-dir>/scripts/init_run.py --mode <mode> --goal "<goal>" --repo <repo-root>
@@ -82,7 +85,8 @@ $evidence-gated-delivery review https://github.com/org/repo/pull/125
 $evidence-gated-delivery status https://github.com/org/repo/issues/124
 ```
 
-At the end of every phase, print the exact one-line invocation for the next phase.
+For Deep handoffs, print the next invocation. Do not make Quick or Balanced users copy commands to
+continue ordinary work.
 
 ## Mandatory Startup Declaration
 
@@ -254,16 +258,15 @@ instruction is recorded in `released_stop_gates` with its timestamp and exact ev
 
 ## Quick Contract
 
-Use Quick only when the router records a low-risk, bounded, reversible request. Do not create
-GitHub artifacts or request a human checkpoint merely because the workflow is active.
+Use Quick only for a low-risk, bounded, reversible request. Do not create GitHub artifacts,
+manifests, routing files, or a human checkpoint merely because the workflow is active.
 
 1. State the selected tier and the bounded outcome.
 2. Inspect the relevant current source, test, or runtime evidence.
 3. Perform the ordinary scoped work authorized by the request.
 4. Run the smallest meaningful targeted check.
-5. Record the source and check in `tier_evidence`, with any claimed external action marked
-   `verified` only after read-back.
-6. Run `python3 <skill-dir>/scripts/validate_tier.py <manifest.json>`.
+5. Report the source and check concisely; claim an external action only after read-back.
+6. Use `validate_tier.py` only when a durable receipt is needed for handoff or dispute.
 
 Escalate to Balanced or Deep when discovery invalidates the routing evidence. Stop for explicit
 authority only when an action crosses the recorded authority envelope.
@@ -273,17 +276,18 @@ authority only when an action crosses the recorded authority envelope.
 Use Balanced for moderate uncertainty, multiple surfaces, or a requested higher-confidence pass.
 It is not a shortened Deep run: it does not require a design tournament or paired GitHub issues.
 
-1. Record a concise contract: objective, bounded scope, non-goals, and verification.
+1. State a concise contract in the working response: objective, bounded scope, non-goals, and verification.
 2. Inspect at least two current independent sources relevant to the change.
 3. Perform the ordinary scoped work authorized by the request and verify claimed external actions
    through read-back.
 4. Run targeted checks and an independent review when the work touches an interface or has a
    meaningful regression risk.
-5. Record the contract, sources, checks, and action ledger in `tier_evidence`.
-6. Run `python3 <skill-dir>/scripts/validate_tier.py <manifest.json>`.
+5. Summarize the contract, sources, checks, and any external-action read-back at handoff.
+6. Use `validate_tier.py` only when a durable receipt is needed for handoff or dispute.
 
 Escalate to Deep when a hard-stop signal, material ambiguity, or a new product/architecture
-decision emerges.
+decision emerges. A temporary failure, a recoverable conflict, or a newly discovered ordinary
+dependent step is not by itself an escalation or a reason to pause.
 
 ## Research Mode
 

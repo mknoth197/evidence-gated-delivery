@@ -400,12 +400,31 @@ def _revokes_graph_authorization(message: str, draft_sha: str) -> bool:
     )
 
 
+def _authorizes_graph_progress(message: str, draft_sha: str) -> bool:
+    """Accept clear user intent, not a required magic sentence or copied hash."""
+    direct = _direct_user_request(message).lower()
+    if _revokes_graph_authorization(message, draft_sha):
+        return False
+    draft_token = re.escape(draft_sha.lower())
+    exact_draft = re.search(
+        rf"(?:approve|authorize)\s+(?:the\s+)?(?:graph\s+draft|draft\s+graph)\s+{draft_token}",
+        direct,
+    )
+    broad_delegation = re.search(
+        r"\b(?:you\s+can\s+)?act\s+on\s+my\s+behalf\b"
+        r"|\b(?:go\s+ahead|move\s+forward|proceed|continue)\s+(?:with\s+)?"
+        r"(?:the\s+)?(?:graph|plan|repair|authorized\s+work)\b",
+        direct,
+    )
+    return bool(exact_draft or broad_delegation)
+
+
 def verify_parent_graph_authorization(
     data: dict[str, Any],
     authorization: dict[str, Any],
     draft: dict[str, Any],
 ) -> list[str]:
-    """Authenticate exact-draft graph approval from the parent user trace."""
+    """Authenticate a parent authorization that covers this graph transaction."""
 
     evidence = authorization.get("authorization_evidence")
     if not isinstance(evidence, dict):
@@ -433,7 +452,6 @@ def verify_parent_graph_authorization(
         ]
     matched = False
     later_user_messages: list[str] = []
-    draft_token = re.escape(str(draft_sha).lower())
     try:
         records = [
             json.loads(line)
@@ -458,12 +476,7 @@ def verify_parent_graph_authorization(
             if item.get("timestamp") != evidence.get("authorized_at"):
                 continue
             affirmative = any(
-                re.fullmatch(
-                    rf"(?is)\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
-                    rf"(?:approve|authorize)\s+(?:the\s+)?"
-                    rf"(?:graph\s+draft|draft\s+graph)\s+{draft_token}[.!]?\s*",
-                    candidate.lower(),
-                )
+                _authorizes_graph_progress(candidate, str(draft_sha))
                 for candidate in _graph_authorization_candidates(message)
             )
             if not affirmative:
@@ -478,6 +491,6 @@ def verify_parent_graph_authorization(
         return [f"graph authorization parent trace is unreadable: {exc}"]
     if not matched:
         errors.append(
-            "parent trace lacks an exact user authorization bound to the graph draft SHA-256"
+            "parent trace lacks a user authorization covering the graph transaction"
         )
     return errors
