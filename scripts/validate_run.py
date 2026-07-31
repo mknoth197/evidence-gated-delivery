@@ -25,6 +25,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from visual_applicability import validate_disposition
 import collaboration_receipts
+import provider_receipts
 import github_graph_adapter
 import plan_phase_validation
 import trace_validation
@@ -99,6 +100,7 @@ def _trace_dependencies() -> trace_validation.TraceDependencies:
         collaboration_delegated_audit_evidence=collaboration_delegated_audit_evidence,
         agent_session_evidence=agent_session_evidence,
         persisted_delegation_role_matches=persisted_delegation_role_matches,
+        provider_delegated_audit_evidence=provider_receipts.provider_delegated_audit_evidence,
         timestamp=timestamp,
     )
 

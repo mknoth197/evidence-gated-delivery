@@ -212,6 +212,51 @@ npx skills@latest add mknoth197/evidence-gated-delivery \
 The CLI supports other compatible agents as well. See the
 [skills CLI documentation](https://www.skills.sh/docs/cli) for current options.
 
+## Provider evidence adapters
+
+Codex Desktop remains the built-in adapter: it verifies the persisted spawn,
+callback, and UUID-backed session lineage. Other runtimes must not imitate that
+layout or weaken the gate. Instead, an integration may submit a
+`provider_delegated` audit receipt backed by a normalized JSON file. The
+validator requires all of the following before it accepts the receipt:
+
+- provider name and version;
+- exact parent and immediate-child session IDs plus delegated role;
+- timezone-aware start and completion timestamps;
+- an existing transcript under an explicitly allowlisted local root, with its
+  SHA-256;
+- exact final-result bytes and SHA-256; and
+- a SHA-256 binding all of the preceding parent/child evidence.
+
+The first supported external shape is `claude_code`: a project hook can write
+this JSON receipt from its session and subagent-stop data. Hook output alone is
+not enough—the validator fails closed when its transcript path, digest, role,
+parent/child binding, or result hash is missing or mismatched. Configure the
+runtime in `provider_context` and name the receipt path in the audit entry:
+
+```json
+{
+  "provider_context": {
+    "provider": "claude_code",
+    "provider_version": "<observed Claude Code version>",
+    "allowed_transcript_roots": ["/absolute/project-controlled/receipt-root"]
+  },
+  "trace_audits": [{
+    "receipt_kind": "provider_delegated",
+    "agent_id": "provider-child-session-id",
+    "role_marker": "Execution auditor phase: research",
+    "result": "exact auditor result",
+    "result_sha256": "sha256 of exact auditor result",
+    "verified_event_ids": ["E1"],
+    "provider_receipt_path": "/absolute/project-controlled/receipt-root/audit.json"
+  }]
+}
+```
+
+This is a capability contract, not a claim that every Claude Code deployment
+provides equivalent evidence. If the integration cannot make the receipt and
+its transcript safely readable, the run remains blocked.
+
 ## Safety model
 
 The workflow defaults external systems to read-only. It requires explicit authorization for
