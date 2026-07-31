@@ -7,7 +7,15 @@ description: Run complex product or engineering work as a reusable Research, Pla
 
 ## Purpose
 
-Operate a durable state machine:
+Select a proportionate delivery tier before operating a state machine:
+
+```text
+Quick: targeted evidence -> scoped change -> targeted check
+Balanced: concise contract -> evidence -> implementation -> verification
+Deep: RESEARCH -> research artifact -> PLAN -> implementation artifact -> IMPLEMENT -> PR -> REVIEW
+```
+
+Deep operates the durable state machine:
 
 ```text
 RESEARCH -> research artifact -> PLAN -> implementation artifact -> IMPLEMENT -> PR -> REVIEW
@@ -16,7 +24,15 @@ RESEARCH -> research artifact -> PLAN -> implementation artifact -> IMPLEMENT ->
 Every phase must revalidate its input against current reality. Durable artifacts, not chat memory,
 carry authority between phases.
 
-By default, `orchestrate` proceeds autonomously from Research through Plan and Implementation when
+Use `scripts/intent_router.py` to record the tier decision from scope, ambiguity, reversibility,
+data risk, novelty, external impact, and hard-stop signals. A user may request a higher tier.
+Protected external writes, destructive or irreversible actions, production or release actions,
+and sensitive-data access always select Deep and require explicit authority. For ordinary scoped
+work, direct user intent implies authority to inspect, edit, and test; do not demand an exact
+approval phrase before performing those normal steps. Ask only when a proposed action crosses that
+authority envelope or materially expands scope.
+
+For Deep, `orchestrate` proceeds autonomously from Research through Plan and Implementation when
 every deterministic gate passes and a fresh independent Phase Transition Judge rates the completed
 phase at least `8/10` for confidence and `3/4` for technical accuracy. A user may request a stop
 before `plan`, `implement`, or `review` at any time; that explicit stop wins over automation until
@@ -32,7 +48,8 @@ operations.
 Read [artifact-publication.md](references/artifact-publication.md) before Plan publication.
 Read [continuous-improvement.md](references/continuous-improvement.md) before beginning any run.
 
-Create the run manifest before substantive work:
+Create the run manifest before substantive work. For Quick and Balanced, first run the router and
+pass its JSON result with `--routing-decision`; legacy initialization defaults to Deep:
 
 ```text
 python3 <skill-dir>/scripts/init_run.py --mode <mode> --goal "<goal>" --repo <repo-root>
@@ -56,6 +73,8 @@ The user can invoke the skill with only a goal or artifact:
 
 ```text
 $evidence-gated-delivery Add self-service deployment health insights
+$evidence-gated-delivery quick Correct a local validation edge case
+$evidence-gated-delivery balanced Add a bounded integration with tests
 $evidence-gated-delivery orchestrate Redesign My Brief for consumer comprehension
 $evidence-gated-delivery https://github.com/org/repo/issues/123
 $evidence-gated-delivery continue https://github.com/org/repo/issues/124
@@ -70,7 +89,7 @@ At the end of every phase, print the exact one-line invocation for the next phas
 The first commentary update after activation must state:
 
 ```text
-Mode: <research|plan|implement|review|status|orchestrate>
+Mode: <quick|balanced|research|plan|implement|review|status|orchestrate>
 Authority: <goal or artifact URL>
 Expected durable artifact: <GitHub issue|GitHub implementation issue|PR|review dispositions>
 Next valid stop: <named exit contract or approval gate>
@@ -88,20 +107,25 @@ Parse an explicit first argument when present:
 - `review`: run Review.
 - `status`: report current state and the next valid transition without mutation.
 - `continue`: inspect the artifact and infer its next phase.
-- `orchestrate`: run the convenience loop described below.
+- `quick`: run the Quick contract.
+- `balanced`: run the Balanced contract.
+- `deep`: alias for `orchestrate` and its complete artifact chain.
+- `orchestrate`: run the Deep convenience loop described below.
 
 When no mode is explicit:
 
-1. Natural-language request to "run", "use", "repeat", or "try" the evaluation loop, RPI loop,
+1. Explicit `quick`, `balanced`, or `deep` selects that tier subject to a hard-risk floor; map
+   `deep` to `orchestrate`.
+2. Natural-language request to "run", "use", "repeat", or "try" the evaluation loop, RPI loop,
    design tournament workflow, previous-thread workflow, or agentic engineering playbook ->
    `orchestrate`.
-2. Freeform goal or feature request with explicit research-only language -> `research`.
-3. Other freeform goal or feature request -> `research`.
-4. GitHub issue dominated by findings, observations, unknowns, or research context -> `plan`.
-5. GitHub issue containing frozen acceptance criteria, design, tasks, rollout, or implementation
+3. A bounded direct fix with low router score -> `quick`.
+4. Other freeform goal or feature request -> router-selected `balanced` or `deep`.
+5. GitHub issue dominated by findings, observations, unknowns, or research context -> `plan`.
+6. GitHub issue containing frozen acceptance criteria, design, tasks, rollout, or implementation
    contracts -> `implement`.
-6. Pull request URL or number -> `review`.
-7. Ambiguous artifact -> inspect linked artifacts and repository state, then choose the earliest
+7. Pull request URL or number -> `review`.
+8. Ambiguous artifact -> inspect linked artifacts and repository state, then choose the earliest
    incomplete phase. Ask only if choosing incorrectly would cause mutation or scope expansion.
 
 State the selected mode and why in one sentence before beginning.
@@ -227,6 +251,39 @@ instruction is recorded in `released_stop_gates` with its timestamp and exact ev
 - Never infer approval for production, telemetry, feature-flag, cloud, or destructive writes.
 - Honor repository-specific approval gates and quality commands.
 - Do not weaken tests or acceptance criteria merely to make a gate pass.
+
+## Quick Contract
+
+Use Quick only when the router records a low-risk, bounded, reversible request. Do not create
+GitHub artifacts or request a human checkpoint merely because the workflow is active.
+
+1. State the selected tier and the bounded outcome.
+2. Inspect the relevant current source, test, or runtime evidence.
+3. Perform the ordinary scoped work authorized by the request.
+4. Run the smallest meaningful targeted check.
+5. Record the source and check in `tier_evidence`, with any claimed external action marked
+   `verified` only after read-back.
+6. Run `python3 <skill-dir>/scripts/validate_tier.py <manifest.json>`.
+
+Escalate to Balanced or Deep when discovery invalidates the routing evidence. Stop for explicit
+authority only when an action crosses the recorded authority envelope.
+
+## Balanced Contract
+
+Use Balanced for moderate uncertainty, multiple surfaces, or a requested higher-confidence pass.
+It is not a shortened Deep run: it does not require a design tournament or paired GitHub issues.
+
+1. Record a concise contract: objective, bounded scope, non-goals, and verification.
+2. Inspect at least two current independent sources relevant to the change.
+3. Perform the ordinary scoped work authorized by the request and verify claimed external actions
+   through read-back.
+4. Run targeted checks and an independent review when the work touches an interface or has a
+   meaningful regression risk.
+5. Record the contract, sources, checks, and action ledger in `tier_evidence`.
+6. Run `python3 <skill-dir>/scripts/validate_tier.py <manifest.json>`.
+
+Escalate to Deep when a hard-stop signal, material ambiguity, or a new product/architecture
+decision emerges.
 
 ## Research Mode
 

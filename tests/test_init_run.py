@@ -17,6 +17,22 @@ from plan_protocol import PlanProtocolError, protocol_activation_receipt_path
 
 
 class InitRunRecoveryTests(unittest.TestCase):
+    def test_tier_requires_router_decision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "repo"
+            repository.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repository, check=True)
+            (repository / "README.md").write_text("test\n")
+            subprocess.run(["git", "add", "README.md"], cwd=repository, check=True)
+            subprocess.run(["git", "commit", "-qm", "test: initialize"], cwd=repository, check=True)
+            argv = ["init_run.py", "--mode", "research", "--goal", "Tiered", "--repo", str(repository), "--tier", "quick"]
+            with patch.object(sys, "argv", argv):
+                with self.assertRaisesRegex(ValueError, "routing-decision"):
+                    init_run.main()
+
     def test_retry_recovers_stranded_activation_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

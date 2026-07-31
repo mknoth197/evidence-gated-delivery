@@ -63,10 +63,12 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         required=True,
-        choices=("research", "plan", "orchestrate", "implement", "review", "status"),
+        choices=("quick", "balanced", "research", "plan", "orchestrate", "implement", "review", "status"),
     )
     parser.add_argument("--goal", required=True)
     parser.add_argument("--repo", required=True, type=Path)
+    parser.add_argument("--tier", choices=("quick", "balanced", "deep"))
+    parser.add_argument("--routing-decision", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -126,6 +128,19 @@ def main() -> int:
         if line.strip()
     ]
 
+    routing_decision = None
+    if args.routing_decision:
+        routing_decision = json.loads(args.routing_decision.read_text(encoding="utf-8"))
+    if args.tier and routing_decision is None:
+        raise ValueError("--tier requires a --routing-decision produced by intent_router.py")
+    if args.tier and routing_decision.get("tier") != args.tier:
+        raise ValueError("--tier must match the routing decision tier")
+    delivery_tier = args.tier or (routing_decision or {}).get("tier", "deep")
+    if delivery_tier not in {"quick", "balanced", "deep"}:
+        raise ValueError("routing decision must select quick, balanced, or deep")
+    requested_tier_by_mode = {"quick": "quick", "balanced": "balanced"}
+    if args.mode in requested_tier_by_mode and delivery_tier != requested_tier_by_mode[args.mode]:
+        raise ValueError("Quick and Balanced modes must match the routing decision tier")
     manifest = {
         "run_id": run_id,
         "run_started_at": now_text,
@@ -147,6 +162,16 @@ def main() -> int:
         "initial_spec_hashes": spec_hashes(root),
         "approved_artifact_hosts": [],
         "workflow_version": WORKFLOW_VERSION_V2,
+        "delivery_tier": delivery_tier,
+        "intent_routing": routing_decision or {
+            "tier": "deep",
+            "risk_score": None,
+            "evidence": {},
+            "hard_floor_reasons": ["legacy_default"],
+            "authority_envelope": {"ordinary_scoped_work": [], "requires_explicit": []},
+            "rationale": "legacy initialization defaults to Deep",
+        },
+        "tier_evidence": {"sources": [], "checks": [], "external_actions": []},
         "automation_policy": {
             "default_mode": "autonomous",
             "auto_transition_min_confidence": 8,

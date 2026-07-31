@@ -21,6 +21,8 @@ def main() -> int:
     print(json.dumps({
         "run_id": data.get("run_id"),
         "mode": data.get("mode"),
+        "delivery_tier": data.get("delivery_tier", "deep"),
+        "intent_routing": data.get("intent_routing"),
         "completed_phases": completed,
         "research_issue_url": data.get("research_issue_url"),
         "implementation_issue_url": data.get("implementation_issue_url"),
