@@ -13,7 +13,7 @@ from visual_core import (
     _declared_kind_group, _inferred_kind_group, _intent_group, _nonempty_text,
     _sequential,
 )
-from visual_inventory import extract_scope_inventory, inventory_sha256
+from visual_inventory import build_plan_inventory, extract_scope_inventory, inventory_sha256
 
 def _entry_errors(inventory: dict[str, Any], declared_ids: dict[str, Any] | None) -> list[str]:
     errors: list[str] = []
@@ -360,6 +360,11 @@ def validate_disposition(
         if declared_ids is None and isinstance(receipt.get("declared_scope_ids"), dict):
             declared_ids = receipt["declared_scope_ids"]
         recompute = True
+    authoritative_inventory_builder = (
+        build_plan_inventory
+        if phase in {"plan", "implement-orientation", "implement"}
+        else extract_scope_inventory
+    )
     if inventory is None:
         inventory, inventory_errors = extract_scope_inventory(
             body,
@@ -371,7 +376,7 @@ def validate_disposition(
         errors.extend(inventory_errors)
     else:
         errors.extend(_entry_errors(inventory, declared_ids))
-    authoritative_inventory, authoritative_errors = extract_scope_inventory(
+    authoritative_inventory, authoritative_errors = authoritative_inventory_builder(
         body,
         user_directions=authoritative_user_directions,
         runtime_evidence=authoritative_runtime_evidence,

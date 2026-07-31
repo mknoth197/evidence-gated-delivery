@@ -505,6 +505,23 @@ Adjust an existing component state.
                 authoritative_issue_body=body,
                 declared_ids=declarations(inventory),
             )
+            mode, validated_inventory, current_errors = visual.validate_disposition(
+                receipt,
+                body,
+                phase="plan",
+                require_embedded_inventory=True,
+                authoritative_user_directions=["Use current runtime evidence."],
+                authoritative_runtime_evidence=runtime_evidence,
+                runtime_evidence_not_before="2026-07-29T11:00:00Z",
+                runtime_evidence_not_after="2026-07-29T12:05:00Z",
+            )
+            self.assertEqual(current_errors, [])
+            self.assertEqual(mode, "runtime_capture")
+            self.assertTrue(
+                validated_inventory["planned_paths"][0][
+                    "runtime_evidence_sufficient"
+                ]
+            )
         self.assertEqual(receipt["evidence_mode"], "runtime_capture")
         _, _, stale_errors = visual.validate_disposition(
             receipt,
