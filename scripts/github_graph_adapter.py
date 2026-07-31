@@ -7,7 +7,7 @@ import re
 import subprocess
 from typing import Any
 
-from plan_protocol import issue_body_sha256
+from plan_protocol import graph_child_body_sha256
 
 
 def _relationship_nodes(
@@ -130,7 +130,7 @@ def remote_graph_state(
                 "task_id": task_id,
                 "stable_marker": marker.group(0),
                 "title": child.get("title"),
-                "body_sha256": issue_body_sha256(str(child.get("body", ""))),
+                "body_sha256": graph_child_body_sha256(str(child.get("body", ""))),
                 "parent_issue_url": parent_url,
             }
         )

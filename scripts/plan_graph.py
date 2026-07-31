@@ -8,6 +8,22 @@ from typing import Any
 from plan_protocol_core import PlanProtocolError, issue_body_sha256, sha256_json
 from plan_events import _validate_iso8601
 
+
+def graph_child_body_sha256(body: str) -> str:
+    """Hash a child issue's semantic payload, not its transport terminator.
+
+    GitHub issue creation and read-back may disagree about terminal newlines.  The
+    stable marker and all meaningful Markdown bytes remain hash-bound; only the
+    number of newline terminators is normalized so a transport detail cannot turn
+    an otherwise exact authorized graph into a conflict.
+    """
+
+    if not isinstance(body, str):
+        raise PlanProtocolError("graph child body must be a string")
+    normalized = body.replace("\r\n", "\n").replace("\r", "\n")
+    return issue_body_sha256(normalized.rstrip("\n") + "\n")
+
+
 def graph_edges(tasks: list[dict[str, Any]]) -> list[dict[str, str]]:
     return [
         {"blocked": task["task_id"], "blocked_by": dependency}
@@ -46,7 +62,7 @@ def _graph_child(task: dict[str, Any]) -> dict[str, Any]:
         "stable_marker": marker,
         "title": task["title"],
         "body": body,
-        "body_sha256": issue_body_sha256(body),
+        "body_sha256": graph_child_body_sha256(body),
     }
 
 
@@ -74,7 +90,7 @@ def validate_graph_draft(draft: Any) -> list[str]:
         if child.get("stable_marker") != f"<!-- evidence-gated-delivery-task:{task_id} -->":
             errors.append(f"graph draft child {task_id} has invalid stable marker")
         try:
-            if issue_body_sha256(child.get("body", "")) != child.get("body_sha256"):
+            if graph_child_body_sha256(child.get("body", "")) != child.get("body_sha256"):
                 errors.append(f"graph draft child {task_id} body hash mismatch")
         except PlanProtocolError:
             errors.append(f"graph draft child {task_id} body must be text")
@@ -174,6 +190,46 @@ def verify_graph_authorization(
     return errors
 
 
+def verify_graph_publication(
+    draft: dict[str, Any],
+    *,
+    current_login: str,
+    current_account_id: str,
+    current_repository: str,
+    current_parent_issue_url: str,
+    capability_receipt: dict[str, Any],
+) -> list[str]:
+    """Verify current, deterministic Plan-graph publication preconditions.
+
+    A Plan that has passed its own validation is the authority for publishing its
+    derived graph. The account, repository, parent, draft, and capabilities must
+    still match before every write.
+    """
+
+    errors = validate_graph_draft(draft)
+    if errors:
+        return errors
+    if not isinstance(capability_receipt, dict):
+        return ["capability receipt must be an object"]
+    if current_repository != draft.get("repository"):
+        errors.append("current repository does not match frozen draft")
+    if current_parent_issue_url != draft.get("parent_issue_url"):
+        errors.append("current parent issue does not match frozen draft")
+    expected_capability = {
+        "github_login": current_login,
+        "github_account_id": current_account_id,
+        "repository": current_repository,
+        "parent_issue_url": current_parent_issue_url,
+        "native_parent_supported": True,
+        "blocking_supported": True,
+        "readback_supported": True,
+    }
+    for field, expected in expected_capability.items():
+        if capability_receipt.get(field) != expected:
+            errors.append(f"capability receipt {field} is missing or stale")
+    return errors
+
+
 def reconcile_graph_state(
     draft: dict[str, Any], remote_state: dict[str, Any]
 ) -> dict[str, Any]:
@@ -234,10 +290,9 @@ def reconcile_graph_state(
         reasons.append("duplicate remote dependency edge")
     if any(edge not in expected_edges for edge in observed_edges):
         reasons.append("remote dependency graph contains an extra or conflicting edge")
-    # Remote order must be a subsequence of authorized order.
-    edge_positions = [expected_edges.index(edge) for edge in observed_edges if edge in expected_edges]
-    if edge_positions != sorted(edge_positions):
-        reasons.append("remote dependency edges are reordered")
+    # GitHub presents relationship connections in API-defined order (commonly
+    # newest-first), not transaction order. Edge membership is authoritative;
+    # presentation order is not and must not turn a valid subset into conflict.
     if reasons:
         return {"classification": "CONFLICT", "reasons": sorted(set(reasons))}
     missing_children = [

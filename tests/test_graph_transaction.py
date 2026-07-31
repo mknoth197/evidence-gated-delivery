@@ -119,6 +119,29 @@ class GraphTransactionTests(unittest.TestCase):
         )
         self.assertTrue(wrong_capability())
 
+    def test_publication_guard_needs_no_authorization_receipt(self):
+        capability = {
+            "github_login": "me",
+            "github_account_id": "1",
+            "repository": "o/r",
+            "parent_issue_url": self.parent,
+            "native_parent_supported": True,
+            "blocking_supported": True,
+            "readback_supported": True,
+        }
+        guard = transaction.publication_guard(
+            self.draft,
+            capability,
+            live_evidence=lambda: {
+                "github_login": "me",
+                "github_account_id": "1",
+                "repository": "o/r",
+                "parent_issue_url": self.parent,
+                "capability_receipt": capability,
+            },
+        )
+        self.assertEqual(guard(), [])
+
     def test_attempt_precedes_write_and_crash_stops(self):
         state = {"children": [], "edges": []}
         calls = []

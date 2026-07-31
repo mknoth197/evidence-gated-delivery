@@ -442,8 +442,8 @@ Goal: choose and freeze what should be built.
 17. Parse the stable task grammar and recompute `graph-policy/v1`. For `NO_GRAPH`, retain the
     validator receipt and reject any graph lifecycle or mutation event as contradictory evidence.
     For `GRAPH_REQUIRED`, use bundled `plan-to-graph` to freeze an exact draft
-    and stop for explicit authorization of that draft before any child-issue or relationship write.
-    After authorization, publish one item at a time and verify the complete native graph remotely.
+    and automatically publish it when its current identity, capability, and collision preconditions
+    hold. Publish one item at a time and verify the complete native graph remotely.
 18. Run the Plan execution auditor and validator only after all disposition, audit, task, graph,
     acceptance, matrix, and reciprocal-link evidence survives remote publication.
 19. In `generative_mockup`, if durable mockup publication fails, keep the Plan issue explicitly

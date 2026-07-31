@@ -134,7 +134,6 @@ Allowed event types are:
 - `issue_read_back`
 - `graph_policy_evaluated`
 - `graph_draft_frozen`
-- `graph_authorized`
 - `graph_action_recorded`
 - `graph_reconciled`
 - `checkpoint_issued`
@@ -149,25 +148,20 @@ A frozen graph draft is deterministically derived from the canonical tasks parse
 authoritative implementation issue. It records the parent issue URL, repository, exact child titles
 and complete bodies, stable markers, child-body hashes, and ordered dependency edges. Its SHA-256
 covers the complete canonical object. Validation requires the supplied draft to equal that derived
-object before authorization or reconciliation.
+object before publication or reconciliation.
 
-Authorization is valid only when it binds:
+Publication is valid only when it binds:
 
 - authenticated GitHub login and immutable account ID;
 - exact repository and parent issue;
 - a current capability receipt proving native parent, blocking, and read-back support;
 - graph draft SHA-256, every child-body SHA-256, and every edge;
-- an authenticated parent-user-message receipt containing the parent thread ID, exact draft
-  SHA-256, exact message SHA-256, and message timestamp. The parent message or one authenticated
-  `response-annotations` selection must explicitly and affirmatively approve or authorize that
-  exact graph draft hash. Negated, revoked, rejected, or conflicting language is not authorization.
-  A later direct user request that revokes, rejects, withdraws, or conflicts invalidates the old
-  receipt before the next write; quoted or repeated hash text alone does not.
 
-Any identity, repository, parent, capability, or draft drift invalidates authorization before a
-write. The transaction guard reauthenticates the parent approval immediately before every write.
-Graph action records use `attempted`, `verified`, or `blocked`; a successful command is not
-`verified` until remote read-back agrees.
+The validated Plan is the publication authority; no separately authorized user message is required.
+Any identity, repository, parent, capability, or draft drift blocks publication before a write. The
+transaction guard rechecks these preconditions immediately before every write. Graph action records
+use `attempted`, `verified`, or `blocked`; a successful command is not `verified` until remote
+read-back agrees.
 
 ## Reconciliation
 
@@ -175,9 +169,9 @@ Remote graph state has exactly three recovery classes:
 
 - `EXACT_MATCH`: reuse the verified item.
 - `AUTHORIZED_MISSING`: resume only missing items when all observed state is an exact subset of the
-  same authorized draft.
+  same current Plan draft.
 - `CONFLICT`: stop in `BLOCKED`; do not edit, delete, close, or duplicate unknown state. Freeze a
-  new draft and obtain explicit reauthorization.
+  new draft and re-evaluate publication preconditions.
 
 Final graph proof verifies stable task markers, child body hashes, parent membership, ordered
 dependency edges, and action ordering from authenticated remote read-back.

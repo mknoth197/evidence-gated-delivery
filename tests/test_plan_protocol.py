@@ -642,6 +642,17 @@ class GraphTests(unittest.TestCase):
             )
         )
 
+    def test_publication_binding_needs_no_user_authorization_receipt(self):
+        errors = protocol.verify_graph_publication(
+            self.draft,
+            current_login="operator",
+            current_account_id="42",
+            current_repository=self.repository,
+            current_parent_issue_url=self.parent,
+            capability_receipt=self.capability,
+        )
+        self.assertEqual(errors, [])
+
     def test_exact_subset_resume_and_conflicts(self):
         empty = protocol.reconcile_graph_state(
             self.draft, {"children": [], "edges": []}
@@ -676,6 +687,43 @@ class GraphTests(unittest.TestCase):
                     protocol.reconcile_graph_state(self.draft, state)["classification"],
                     "CONFLICT",
                 )
+
+    def test_child_transport_newlines_do_not_create_a_graph_conflict(self):
+        child = self.draft["children"][0]
+        self.assertEqual(
+            protocol.graph_child_body_sha256(child["body"]),
+            protocol.graph_child_body_sha256(child["body"] + "\n\n"),
+        )
+        remote = self.remote_child("T-001")
+        remote["body_sha256"] = protocol.graph_child_body_sha256(
+            child["body"] + "\n\n"
+        )
+        result = protocol.reconcile_graph_state(
+            self.draft, {"children": [remote], "edges": []}
+        )
+        self.assertEqual(result["classification"], "AUTHORIZED_MISSING")
+
+    def test_child_content_change_remains_a_graph_conflict(self):
+        child = self.draft["children"][0]
+        remote = self.remote_child("T-001")
+        remote["body_sha256"] = protocol.graph_child_body_sha256(
+            child["body"].replace("Task 1", "Different task")
+        )
+        result = protocol.reconcile_graph_state(
+            self.draft, {"children": [remote], "edges": []}
+        )
+        self.assertEqual(result["classification"], "CONFLICT")
+
+    def test_remote_dependency_presentation_order_is_not_a_conflict(self):
+        reversed_edges = list(reversed(self.draft["edges"]))
+        result = protocol.reconcile_graph_state(
+            self.draft,
+            {
+                "children": [self.remote_child("T-001"), self.remote_child("T-002")],
+                "edges": reversed_edges,
+            },
+        )
+        self.assertEqual(result["classification"], "EXACT_MATCH")
 
     def test_final_graph_requires_verified_action_order(self):
         remote = {

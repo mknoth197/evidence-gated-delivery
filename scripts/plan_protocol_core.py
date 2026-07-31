@@ -47,7 +47,6 @@ ALLOWED_EVENT_TYPES = frozenset(
         "issue_read_back",
         "graph_policy_evaluated",
         "graph_draft_frozen",
-        "graph_authorized",
         "graph_action_recorded",
         "graph_reconciled",
         "checkpoint_issued",

@@ -25,7 +25,7 @@
         "GitHub implementation issue is the sole normative Plan artifact",
         "plan-protocol/v2 stable task and audit receipts",
         "validator-owned graph policy and phase validity",
-        "hash-bound explicit authorization and exact-subset recovery",
+        "Plan-bound automatic publication and exact-subset recovery",
         "authenticated remote read-back and append-only action evidence"
       ]
     }
