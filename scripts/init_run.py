@@ -172,6 +172,11 @@ def main() -> int:
             "rationale": "legacy initialization defaults to Deep",
         },
         "tier_evidence": {"sources": [], "checks": [], "external_actions": []},
+        "execution_frontier": {"next_material_action": "", "state": "ready", "recovery_state": "continue", "hard_boundary": ""},
+        "progress_events": [],
+        "progress_evidence": [],
+        "open_questions": [],
+        "gate_inventory": [],
         "automation_policy": {
             "default_mode": "autonomous",
             "auto_transition_min_confidence": 8,

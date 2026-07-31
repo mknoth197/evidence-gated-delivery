@@ -39,6 +39,16 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
     "released_stop_gates": [],
     "hard_stop_categories": ["protected_external_write", "destructive_or_irreversible", "production_or_release", "missing_authority"]
   },
+  "execution_frontier": {
+    "next_material_action": "",
+    "state": "ready",
+    "recovery_state": "continue",
+    "hard_boundary": ""
+  },
+  "progress_events": [],
+  "progress_evidence": [],
+  "open_questions": [],
+  "gate_inventory": [],
   "phase_transition_judgments": [],
   "automation_decisions": [],
   "unresolved_hard_stops": [],
@@ -136,6 +146,21 @@ Use concrete strings, not booleans:
 - Source file and line or test name.
 - Query ID, table, API result, or freshness observation.
 - GitHub issue, PR, check, or discussion URL.
+
+## Progress Control
+
+`execution_frontier` names the one next material action that can advance the run. Its state is
+one of `ready`, `delegated`, `verified`, `blocked`, or `retired`; its recovery state is one of
+`continue`, `repair`, `escalate`, or `retire`. A blocked frontier must escalate, and escalation
+must identify a concrete `hard_boundary`.
+
+Append a `progress_events` entry after each meaningful action. Repeated non-progress entries with
+the same kind, action, and blocker are a stall unless a state change or `evidence_delta` resets the
+sequence. `progress_evidence` and `open_questions` provide the bounded context capsule for a new
+worker. Each `gate_inventory` entry records its name, risk, trigger, cost, and `review_at` so a
+gate cannot survive merely from inertia. `scripts/progress_control.py` validates this control plane
+and reports tier evidence budgets plus material-action, evidence-delta, interruption, and stall
+metrics.
 
 ## Plan Protocol v2
 
