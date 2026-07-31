@@ -67,6 +67,16 @@ def route(
             "ordinary_scoped_work": ["inspect", "edit", "test"],
             "requires_explicit": sorted(HARD_STOP_ACTIONS),
         },
+        "progress_corridor": {
+            "continue_without_prompt": [
+                "inspect",
+                "reconcile",
+                "repair",
+                "test",
+                "read_back",
+            ],
+            "pause_only_for": sorted(HARD_STOP_ACTIONS),
+        },
         "rationale": (
             "hard safety floor applies" if floor_reasons else f"risk score {score} selects {selected}"
         ),

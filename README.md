@@ -31,21 +31,19 @@ for a higher tier; hard-risk signals always raise the floor.
 | Balanced | Moderate uncertainty or multi-surface work | A concise contract, two current sources, checks, and verified external actions. |
 | Deep | High-risk, ambiguous, cross-team, production, privacy, or protected-write work | The complete Research → Plan → Implement → Review artifact chain. |
 
-Run the deterministic router before initializing a new run. It records the evidence and an
-authority envelope: direct user intent implies ordinary scoped inspection, edits, and tests; it
-does not imply protected external writes, destructive or irreversible work, production/release
-changes, or sensitive-data access.
+The agent runs the deterministic router internally. It should not ask users to select a tier or
+provide a routing file. Direct user intent opens a progress corridor for ordinary scoped
+inspection, edits, tests, reconciliation, and dependent recovery steps. The agent pauses only for
+protected external writes, destructive or irreversible work, production/release changes,
+sensitive-data access, or material scope expansion.
 
 ```bash
 python3 scripts/intent_router.py --scope medium --ambiguity medium \
-  --novelty medium --external-impact ordinary > /tmp/routing-decision.json
-python3 scripts/init_run.py --mode balanced --goal "Your goal" --repo /path/to/git-worktree \
-  --routing-decision /tmp/routing-decision.json
+  --novelty medium --external-impact ordinary
 ```
 
-Pass the resulting JSON with `--routing-decision` to `init_run.py`. Use
-`scripts/validate_tier.py` for Quick and Balanced receipts. Deep continues to use
-`scripts/validate_run.py` unchanged.
+Quick and Balanced may use `scripts/validate_tier.py` when a durable receipt is useful; they do
+not require it to proceed. Deep continues to use `scripts/validate_run.py` unchanged.
 
 ## Continuous improvement
 
@@ -86,6 +84,7 @@ SKILL.md                 Workflow instructions for an agent harness
 references/              Phase contracts, role contracts, publication, retrospective rubric
 scripts/init_run.py      Creates a durable run manifest
 scripts/intent_router.py Deterministically grades the delivery tier and authority envelope
+scripts/delegation_router.py Selects a solo, one-off, parallel, or phase-isolated task topology
 scripts/validate_tier.py Validates Quick and Balanced receipts; delegates Deep to the existing validator
 scripts/validate_run.py  Validates phase transitions and writes receipts
 scripts/preflight_plan.py Validates a draft plan before publication
