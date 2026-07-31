@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+from progress_control import assess
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -18,11 +20,14 @@ def main() -> int:
     completed = [phase for phase in ("research", "plan", "implement", "review") if timeline.get(f"{phase}_completed_at")]
     judgments = data.get("phase_transition_judgments", [])
     latest = judgments[-1] if isinstance(judgments, list) and judgments else None
+    progress = assess(data)
     print(json.dumps({
         "run_id": data.get("run_id"),
         "mode": data.get("mode"),
         "delivery_tier": data.get("delivery_tier", "deep"),
         "intent_routing": data.get("intent_routing"),
+        "execution_frontier": data.get("execution_frontier"),
+        "progress_control": progress,
         "completed_phases": completed,
         "research_issue_url": data.get("research_issue_url"),
         "implementation_issue_url": data.get("implementation_issue_url"),

@@ -34,6 +34,13 @@ ordinary dependent recovery steps. Treat this as a **progress corridor**: batch 
 keep moving until a proposed action crosses a hard boundary or materially expands scope. Do not
 turn a discovered sub-step into a new approval question.
 
+Maintain one **execution frontier**: the next material action, its recovery state (`continue`,
+`repair`, `escalate`, or `retire`), and the evidence delta expected from it. Log a progress event
+after each meaningful action. Repeated non-progress with no state or evidence delta is a stall:
+execute the smallest safe repair, name one real hard boundary, or retire the path. Do not create
+another audit merely to restate the stall. Use `scripts/progress_control.py` internally to expose
+the tier evidence budget, gate accountability, and outcome signals.
+
 For Deep, `orchestrate` proceeds autonomously from Research through Plan and Implementation when
 every deterministic gate passes and a fresh independent Phase Transition Judge rates the completed
 phase at least `8/10` for confidence and `3/4` for technical accuracy. A user may request a stop
