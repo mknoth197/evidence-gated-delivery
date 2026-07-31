@@ -16,6 +16,7 @@ class TraceDependencies:
     collaboration_delegated_audit_evidence: Callable[..., Any]
     agent_session_evidence: Callable[..., Any]
     persisted_delegation_role_matches: Callable[..., bool]
+    provider_delegated_audit_evidence: Callable[..., Any]
     timestamp: Callable[..., Any]
 
 
@@ -38,7 +39,8 @@ def validate_trace_audit(
         len(matching) == 1
         and matching[0].get("receipt_kind") == "collaboration_delegated"
     )
-    valid_audit = realtime or (len(matching) == 1 and deps.completed_agent(matching[0]))
+    provider = len(matching) == 1 and matching[0].get("receipt_kind") == "provider_delegated"
+    valid_audit = realtime or provider or (len(matching) == 1 and deps.completed_agent(matching[0]))
     if not valid_audit:
         errors.append(f"exactly one completed {required_phase} trace audit is required")
         return
@@ -57,6 +59,8 @@ def validate_trace_audit(
         evidence, session_error = deps.realtime_delegated_audit_evidence(data, matching[0])
     elif collaboration:
         evidence, session_error = deps.collaboration_delegated_audit_evidence(data, matching[0])
+    elif provider:
+        evidence, session_error = deps.provider_delegated_audit_evidence(data, matching[0])
     else:
         evidence, session_error = deps.agent_session_evidence(matching[0]["agent_id"])
     if session_error:
@@ -65,7 +69,11 @@ def validate_trace_audit(
     assert evidence is not None
     final_message = evidence["final_message"]
     session_meta = evidence["session_meta"]
-    if collaboration:
+    if provider:
+        expected_marker = f"Execution auditor phase: {required_phase}"
+        if matching[0].get("role_marker") != expected_marker:
+            errors.append(f"{required_phase} provider auditor receipt lacks the required role marker")
+    elif collaboration:
         expected_marker = f"Execution auditor phase: {required_phase}"
         if matching[0].get("role_marker") != expected_marker:
             errors.append(
@@ -92,7 +100,7 @@ def validate_trace_audit(
         errors.append(f"{required_phase} realtime auditor receipt lacks the required role marker")
     session_started = deps.timestamp(
         evidence.get("delegation_started_at")
-        if realtime or collaboration
+        if realtime or collaboration or provider
         else session_meta.get("timestamp")
     )
     run_started = deps.timestamp(data.get("run_started_at"))
