@@ -168,6 +168,15 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                 "Execution auditor phase: research",
             )
         )
+        self.assertTrue(
+            validator.persisted_delegation_role_matches(
+                {
+                    "task_name": "execution_auditor_phase_research_2",
+                    "message": "gAAAAABencrypted",
+                },
+                "Execution auditor phase: research",
+            )
+        )
         self.assertFalse(
             validator.persisted_delegation_role_matches(
                 json.dumps(
@@ -180,6 +189,8 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
             "implementation_research_audit",
             "research_plan_auditor",
             "execution_auditor_phase_research_plan",
+            "execution_auditor_phase_research_0",
+            "execution_auditor_phase_research_recheck",
         ):
             with self.subTest(ambiguous=ambiguous):
                 self.assertFalse(
