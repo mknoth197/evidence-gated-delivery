@@ -216,9 +216,19 @@ def validate_timeline(data: dict[str, Any], phase: str, errors: list[str]) -> No
             errors.append(f"phase_timeline.{field} must be an ISO-8601 timestamp")
     if any(value is None for value in values.values()):
         return
-    ordered = [started] + [values[field] for field in required]
+    ordered = [values[field] for field in required]
     if ordered != sorted(ordered):
         errors.append("phase_timeline must prove Research completed before Plan began")
+    current_boundary_field = {
+        "research": "research_started_at",
+        "plan": "plan_started_at",
+        "orchestrate-preapproval": "plan_started_at",
+        "implement": "implement_completed_at",
+        "review": "review_completed_at",
+    }.get(phase)
+    current_boundary = values.get(current_boundary_field) if current_boundary_field else None
+    if current_boundary is not None and started > current_boundary:
+        errors.append("run_started_at must not follow the current phase boundary")
 
 
 def issue_url(value: Any) -> bool:

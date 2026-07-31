@@ -75,12 +75,15 @@ parent, capability receipt, each child title and full-body hash, ordered edges, 
 and draft SHA-256. Ask the user to explicitly authorize that exact draft.
 
 Authorization evidence is an authenticated parent-user-message receipt binding the parent thread,
-exact draft SHA-256, exact message SHA-256, and message timestamp. The message itself must explicitly
-and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected, or
-conflicting language fails closed. Approval of a Plan, a previous draft, or
+exact draft SHA-256, exact message SHA-256, and message timestamp. The message itself, or one
+authenticated `response-annotations` selection in that message, must explicitly and affirmatively
+approve or authorize that exact graph draft hash. Selected text must match the same exact approval
+grammar as a direct message; surrounding quoted assistant text is never authority. Negated,
+revoked, rejected, or conflicting language fails closed. Approval of a Plan, a previous draft, or
 “continue” from before the draft was frozen is not graph authorization. Reauthenticate the receipt
-before every write. Any later parent-user message referencing that draft hash invalidates the old
-receipt and requires a new explicit authorization receipt. Drift invalidates authorization. Never broaden authorization to later edits or
+before every write. A later direct user request that revokes, rejects, withdraws, or conflicts with
+the approved draft invalidates the receipt; merely quoting or repeating the hash in a response
+annotation does not. Drift invalidates authorization. Never broaden authorization to later edits or
 unknown recovery actions.
 
 ## Transaction and action ledger

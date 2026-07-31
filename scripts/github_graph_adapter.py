@@ -9,6 +9,31 @@ from typing import Any
 
 from plan_protocol import issue_body_sha256
 
+
+def _relationship_nodes(
+    value: Any, field: str
+) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Normalize legacy arrays and GitHub CLI connection objects."""
+    if isinstance(value, list):
+        nodes = value
+    elif isinstance(value, dict):
+        nodes = value.get("nodes")
+        total_count = value.get("totalCount")
+        if (
+            not isinstance(nodes, list)
+            or isinstance(total_count, bool)
+            or not isinstance(total_count, int)
+        ):
+            return None, f"{field} read-back connection is malformed"
+        if total_count != len(nodes):
+            return None, f"{field} read-back connection is incomplete"
+    else:
+        return None, f"read-back lacks {field}"
+    if any(not isinstance(node, dict) for node in nodes):
+        return None, f"{field} read-back contains a malformed node"
+    return nodes, None
+
+
 def gh_json(arguments: list[str]) -> tuple[dict[str, Any] | None, str | None]:
     try:
         completed = subprocess.run(
@@ -57,9 +82,12 @@ def remote_graph_state(
     assert parent is not None
     children: list[dict[str, Any]] = []
     task_by_url: dict[str, str] = {}
-    raw_children = parent.get("subIssues")
-    if not isinstance(raw_children, list):
-        return None, "parent issue read-back lacks subIssues"
+    raw_children, children_error = _relationship_nodes(
+        parent.get("subIssues"), "subIssues"
+    )
+    if children_error:
+        return None, f"parent issue {children_error}"
+    assert raw_children is not None
     child_payloads: list[dict[str, Any]] = []
     for child_summary in raw_children:
         if not isinstance(child_summary, dict) or not isinstance(
@@ -114,9 +142,12 @@ def remote_graph_state(
         )
         assert blocked_match is not None
         blocked = blocked_match.group(1)
-        blocked_by = child.get("blockedBy")
-        if not isinstance(blocked_by, list):
-            return None, f"child {child.get('url')} lacks blockedBy read-back"
+        blocked_by, blocked_by_error = _relationship_nodes(
+            child.get("blockedBy"), "blockedBy"
+        )
+        if blocked_by_error:
+            return None, f"child {child.get('url')} {blocked_by_error}"
+        assert blocked_by is not None
         for blocker in blocked_by:
             blocker_url = blocker.get("url") if isinstance(blocker, dict) else None
             blocker_id = task_by_url.get(str(blocker_url))
@@ -130,14 +161,21 @@ def remote_graph_state(
                 ),
                 None,
             )
-            blocking = blocker_child.get("blocking") if blocker_child else None
+            blocking, blocking_error = _relationship_nodes(
+                blocker_child.get("blocking") if blocker_child else None,
+                "blocking",
+            )
+            if blocking_error:
+                blocker_url = blocker_child.get("url") if blocker_child else ""
+                return None, f"child {blocker_url} {blocking_error}"
+            assert blocking is not None
             blocked_url = str(child.get("url"))
             blocking_urls = {
                 str(value.get("url"))
-                for value in blocking or []
+                for value in blocking
                 if isinstance(value, dict)
             }
-            if not isinstance(blocking, list) or blocked_url not in blocking_urls:
+            if blocked_url not in blocking_urls:
                 return None, (
                     f"dependency symmetry mismatch: {blocker_id} does not report "
                     f"{blocked} in blocking"
@@ -172,9 +210,12 @@ def remote_workflow_graph_artifacts(
     if error:
         return None, error
     assert parent is not None
-    raw_children = parent.get("subIssues")
-    if not isinstance(raw_children, list):
-        return None, "parent issue read-back lacks subIssues"
+    raw_children, children_error = _relationship_nodes(
+        parent.get("subIssues"), "subIssues"
+    )
+    if children_error:
+        return None, f"parent issue {children_error}"
+    assert raw_children is not None
     workflow_children: list[str] = []
     for child_summary in raw_children:
         if not isinstance(child_summary, dict) or not isinstance(

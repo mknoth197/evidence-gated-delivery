@@ -354,6 +354,52 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
     )
 
 
+def _graph_authorization_candidates(message: str) -> list[str]:
+    """Return direct text plus authenticated response-annotation selections."""
+    candidates = [message]
+    match = re.search(
+        r"(?s)<response-annotations>\s*(\[.*?\])\s*</response-annotations>",
+        message,
+    )
+    if match is None:
+        return candidates
+    try:
+        annotations = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return candidates
+    if not isinstance(annotations, list):
+        return candidates
+    candidates.extend(
+        annotation["text"]
+        for annotation in annotations
+        if isinstance(annotation, dict) and nonempty(annotation.get("text"))
+    )
+    return candidates
+
+
+def _direct_user_request(message: str) -> str:
+    """Exclude quoted response annotations when evaluating later revocations."""
+    marker = "## My request for Codex:"
+    if marker not in message:
+        return message
+    return message.split(marker, 1)[1].strip()
+
+
+def _revokes_graph_authorization(message: str, draft_sha: str) -> bool:
+    direct = _direct_user_request(message).lower()
+    if draft_sha.lower() not in direct:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:revoke|rescind|reject|cancel|withdraw)\b"
+            r"|\bno longer (?:approve|authorize)\b"
+            r"|\bdo not (?:approve|authorize|create|proceed)\b"
+            r"|\bchanged? my mind\b",
+            direct,
+        )
+    )
+
+
 def verify_parent_graph_authorization(
     data: dict[str, Any],
     authorization: dict[str, Any],
@@ -411,18 +457,20 @@ def verify_parent_graph_authorization(
                 continue
             if item.get("timestamp") != evidence.get("authorized_at"):
                 continue
-            lowered = message.lower()
-            affirmative = re.fullmatch(
-                rf"(?is)\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
-                rf"(?:approve|authorize)\s+(?:the\s+)?"
-                rf"(?:graph\s+draft|draft\s+graph)\s+{draft_token}[.!]?\s*",
-                lowered,
+            affirmative = any(
+                re.fullmatch(
+                    rf"(?is)\s*(?:i\s+)?(?:(?:hereby|explicitly)\s+)?"
+                    rf"(?:approve|authorize)\s+(?:the\s+)?"
+                    rf"(?:graph\s+draft|draft\s+graph)\s+{draft_token}[.!]?\s*",
+                    candidate.lower(),
+                )
+                for candidate in _graph_authorization_candidates(message)
             )
             if not affirmative:
                 continue
             matched = True
         if matched and any(
-            re.search(rf"(?i)\b{draft_token}\b", message)
+            _revokes_graph_authorization(message, str(draft_sha))
             for message in later_user_messages
         ):
             matched = False

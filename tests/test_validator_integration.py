@@ -806,25 +806,42 @@ No UI.
 class RemoteGraphReadbackTests(unittest.TestCase):
     url = "https://github.com/o/r/issues/1"
 
-    def payloads(self, *, symmetric: bool):
+    def payloads(self, *, symmetric: bool, connection_shape: bool = False):
         child_one_url = "https://github.com/o/r/issues/2"
         child_two_url = "https://github.com/o/r/issues/3"
-        parent = {"url": self.url, "subIssues": [{"number": 2}, {"number": 3}]}
+        sub_issues = [{"number": 2}, {"number": 3}]
+        child_one_blocking = [{"url": child_two_url}] if symmetric else []
+        child_two_blocked_by = [{"url": child_one_url}]
+        if connection_shape:
+            sub_issues = {"nodes": sub_issues, "totalCount": 2}
+            child_one_blocking = {
+                "nodes": child_one_blocking,
+                "totalCount": len(child_one_blocking),
+            }
+            child_two_blocked_by = {
+                "nodes": child_two_blocked_by,
+                "totalCount": len(child_two_blocked_by),
+            }
+        parent = {"url": self.url, "subIssues": sub_issues}
         child_one = {
             "url": child_one_url,
             "title": "One",
             "body": "<!-- evidence-gated-delivery-task:T-001 -->\n\none",
             "parent": {"url": self.url},
-            "blockedBy": [],
-            "blocking": [{"url": child_two_url}] if symmetric else [],
+            "blockedBy": (
+                {"nodes": [], "totalCount": 0} if connection_shape else []
+            ),
+            "blocking": child_one_blocking,
         }
         child_two = {
             "url": child_two_url,
             "title": "Two",
             "body": "<!-- evidence-gated-delivery-task:T-002 -->\n\ntwo",
             "parent": {"url": self.url},
-            "blockedBy": [{"url": child_one_url}],
-            "blocking": [],
+            "blockedBy": child_two_blocked_by,
+            "blocking": (
+                {"nodes": [], "totalCount": 0} if connection_shape else []
+            ),
         }
         return [(parent, None), (child_one, None), (child_two, None)]
 
@@ -842,6 +859,47 @@ class RemoteGraphReadbackTests(unittest.TestCase):
         ):
             _state, error = validator._remote_graph_state(self.url)
         self.assertIn("symmetry mismatch", error)
+
+    def test_accepts_github_cli_connection_shaped_relationships(self):
+        with patch.object(
+            validator,
+            "_gh_json",
+            side_effect=self.payloads(symmetric=True, connection_shape=True),
+        ):
+            state, error = validator._remote_graph_state(self.url)
+        self.assertIsNone(error)
+        self.assertEqual(
+            state["edges"], [{"blocked": "T-002", "blocked_by": "T-001"}]
+        )
+
+    def test_accepts_empty_connection_shaped_subissues(self):
+        with patch.object(
+            validator,
+            "_gh_json",
+            return_value=(
+                {
+                    "url": self.url,
+                    "subIssues": {"nodes": [], "totalCount": 0},
+                },
+                None,
+            ),
+        ):
+            state, error = validator._remote_graph_state(self.url)
+        self.assertIsNone(error)
+        self.assertEqual(state, {"children": [], "edges": []})
+
+    def test_no_graph_scan_accepts_empty_connection_shaped_subissues(self):
+        with patch.object(
+            validator,
+            "_gh_json",
+            return_value=(
+                {"subIssues": {"nodes": [], "totalCount": 0}},
+                None,
+            ),
+        ):
+            children, error = validator._remote_workflow_graph_artifacts(self.url)
+        self.assertIsNone(error)
+        self.assertEqual(children, [])
 
 
 if __name__ == "__main__":

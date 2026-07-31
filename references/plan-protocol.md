@@ -158,10 +158,11 @@ Authorization is valid only when it binds:
 - a current capability receipt proving native parent, blocking, and read-back support;
 - graph draft SHA-256, every child-body SHA-256, and every edge;
 - an authenticated parent-user-message receipt containing the parent thread ID, exact draft
-  SHA-256, exact message SHA-256, and message timestamp. The parent message must explicitly
-  and affirmatively approve or authorize that exact graph draft hash. Negated, revoked, rejected,
-  or conflicting language is not authorization. Any later parent-user message referencing that
-  draft hash invalidates the old receipt before the next write and requires a new explicit receipt.
+  SHA-256, exact message SHA-256, and message timestamp. The parent message or one authenticated
+  `response-annotations` selection must explicitly and affirmatively approve or authorize that
+  exact graph draft hash. Negated, revoked, rejected, or conflicting language is not authorization.
+  A later direct user request that revokes, rejects, withdraws, or conflicts invalidates the old
+  receipt before the next write; quoted or repeated hash text alone does not.
 
 Any identity, repository, parent, capability, or draft drift invalidates authorization before a
 write. The transaction guard reauthenticates the parent approval immediately before every write.

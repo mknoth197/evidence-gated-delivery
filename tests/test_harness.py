@@ -47,6 +47,45 @@ class FakeResponse:
         return self.payload
 
 
+class TimelineValidationTests(unittest.TestCase):
+    def test_plan_invocation_can_start_after_bound_research_completed(self):
+        errors: list[str] = []
+        validator.validate_timeline(
+            {
+                "run_started_at": "2026-07-29T12:00:00Z",
+                "phase_timeline": {
+                    "research_started_at": "2026-07-29T10:00:00Z",
+                    "research_completed_at": "2026-07-29T11:00:00Z",
+                    "plan_started_at": "2026-07-29T12:00:00Z",
+                    "plan_completed_at": "2026-07-29T13:00:00Z",
+                },
+            },
+            "plan",
+            errors,
+        )
+        self.assertEqual(errors, [])
+
+    def test_plan_invocation_cannot_start_after_plan_boundary(self):
+        errors: list[str] = []
+        validator.validate_timeline(
+            {
+                "run_started_at": "2026-07-29T12:00:01Z",
+                "phase_timeline": {
+                    "research_started_at": "2026-07-29T10:00:00Z",
+                    "research_completed_at": "2026-07-29T11:00:00Z",
+                    "plan_started_at": "2026-07-29T12:00:00Z",
+                    "plan_completed_at": "2026-07-29T13:00:00Z",
+                },
+            },
+            "plan",
+            errors,
+        )
+        self.assertIn(
+            "run_started_at must not follow the current phase boundary",
+            errors,
+        )
+
+
 class PublicationTests(unittest.TestCase):
     def transition_data(self, confidence=8, stops=None, findings=None):
         receipt_sha = "a" * 64
@@ -483,6 +522,134 @@ class AuditorAuthenticationTests(unittest.TestCase):
                         {"draft_sha256": draft_sha},
                     )
                 )
+
+    def test_graph_authorization_accepts_exact_response_annotation(self):
+        draft_sha = "b" * 64
+        approval = f"I authorize graph draft {draft_sha}."
+        message = (
+            "# Response annotations:\n"
+            "<response-annotations>\n"
+            + json.dumps([{"text": approval}])
+            + "\n</response-annotations>\n\n"
+            "## My request for Codex:\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            session_dir = Path(directory) / "sessions" / "2026" / "07" / "23"
+            session_dir.mkdir(parents=True)
+            session = session_dir / f"rollout-{self.parent_thread_id}.jsonl"
+            records = [
+                {
+                    "type": "session_meta",
+                    "payload": {"id": self.parent_thread_id},
+                },
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-07-23T12:05:00Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": message}],
+                    },
+                },
+            ]
+            session.write_text(
+                "\n".join(json.dumps(record) for record in records) + "\n"
+            )
+            authorization = {
+                "authorization_evidence": {
+                    "receipt_kind": "authenticated_parent_user_message",
+                    "parent_thread_id": self.parent_thread_id,
+                    "draft_sha256": draft_sha,
+                    "message_sha256": hashlib.sha256(message.encode()).hexdigest(),
+                    "authorized_at": "2026-07-23T12:05:00Z",
+                }
+            }
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                    {"parent_thread_id": self.parent_thread_id},
+                    authorization,
+                    {"draft_sha256": draft_sha},
+                )
+            self.assertEqual(errors, [])
+
+    def test_graph_authorization_ignores_quoted_hash_without_direct_revocation(self):
+        draft_sha = "b" * 64
+        approval = f"I authorize graph draft {draft_sha}."
+        approval_message = (
+            "# Response annotations:\n"
+            "<response-annotations>\n"
+            + json.dumps([{"text": approval}])
+            + "\n</response-annotations>\n\n"
+            "## My request for Codex:\n"
+        )
+        later_message = (
+            "# Response annotations:\n"
+            "<response-annotations>\n"
+            + json.dumps(
+                [
+                    {
+                        "text": (
+                            "Please type this directly: "
+                            f"I authorize graph draft {draft_sha}."
+                        )
+                    }
+                ]
+            )
+            + "\n</response-annotations>\n\n"
+            "## My request for Codex:\n"
+            "This feedback loop is overkill; do not do this.\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            session_dir = Path(directory) / "sessions" / "2026" / "07" / "23"
+            session_dir.mkdir(parents=True)
+            session = session_dir / f"rollout-{self.parent_thread_id}.jsonl"
+            records = [
+                {
+                    "type": "session_meta",
+                    "payload": {"id": self.parent_thread_id},
+                },
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-07-23T12:05:00Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": approval_message}
+                        ],
+                    },
+                },
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-07-23T12:06:00Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": later_message}],
+                    },
+                },
+            ]
+            session.write_text(
+                "\n".join(json.dumps(record) for record in records) + "\n"
+            )
+            authorization = {
+                "authorization_evidence": {
+                    "receipt_kind": "authenticated_parent_user_message",
+                    "parent_thread_id": self.parent_thread_id,
+                    "draft_sha256": draft_sha,
+                    "message_sha256": hashlib.sha256(
+                        approval_message.encode()
+                    ).hexdigest(),
+                    "authorized_at": "2026-07-23T12:05:00Z",
+                }
+            }
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                errors = validator.collaboration_receipts.verify_parent_graph_authorization(
+                    {"parent_thread_id": self.parent_thread_id},
+                    authorization,
+                    {"draft_sha256": draft_sha},
+                )
+            self.assertEqual(errors, [])
 
     def test_graph_authorization_rejects_negated_or_conflicting_message(self):
         draft_sha = "b" * 64
