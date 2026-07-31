@@ -78,7 +78,7 @@ class BundledSkillTests(unittest.TestCase):
             "complete task Markdown",
             "canonical child-body SHA-256",
             "exact frozen draft",
-            "explicitly authorize",
+            "validated Plan is the publication authority",
             "EXACT_MATCH",
             "AUTHORIZED_MISSING",
             "CONFLICT",
@@ -96,7 +96,7 @@ class BundledSkillTests(unittest.TestCase):
         )
         for token in required:
             self.assertIn(token, self.graph)
-        mutation_gate = self.graph.index("## Explicit authorization gate")
+        mutation_gate = self.graph.index("## Automatic publication gate")
         transaction = self.graph.index("## Transaction and action ledger")
         self.assertLess(mutation_gate, transaction)
         self.assertNotIn(".github/specs", self.graph)

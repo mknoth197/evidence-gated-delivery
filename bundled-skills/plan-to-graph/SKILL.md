@@ -1,6 +1,6 @@
 ---
 name: plan-to-graph
-description: Convert an approved Evidence-Gated Delivery GitHub Plan issue into an authorized, remotely verified native GitHub child-issue dependency graph with fail-closed recovery.
+description: Convert an approved Evidence-Gated Delivery GitHub Plan issue into an automatically published, remotely verified native GitHub child-issue dependency graph with fail-closed recovery.
 argument-hint: "Authoritative GitHub implementation issue URL and current graph-policy receipt"
 ---
 
@@ -11,8 +11,8 @@ argument-hint: "Authoritative GitHub implementation issue URL and current graph-
 Translate the `## Tasks` section of one authoritative GitHub implementation issue into one level of
 native child issues plus native blocked-by edges. The parent issue remains the complete Plan. Do not
 modify source code or derive tasks from prose. Do not use a local spec as authority, emulate
-relationships with comments or checklists, or mutate GitHub before the exact draft is explicitly
-authorized.
+relationships with comments or checklists, or mutate GitHub when the current Plan, identity,
+capabilities, or collision scan do not match.
 
 Run only when the validator recomputes `GRAPH_REQUIRED` under `graph-policy/v1`. For `NO_GRAPH`,
 record the policy receipt and stop without GitHub graph writes.
@@ -31,7 +31,7 @@ Before drafting, record:
 
 Missing authentication, account ID, repository access, native relationship capability, full body,
 or read-back support is a blocker. Stop; do not substitute another tracker or degraded relationship.
-Recheck identity, repository, parent, capability, and authorization immediately before every write.
+Recheck identity, repository, parent, capability, and the frozen Plan draft immediately before every write.
 
 ## Parse and freeze
 
@@ -54,47 +54,40 @@ identity change creates a new draft.
 
 ## Collision scan and reconciliation
 
-Read all current children and relationship state before authorization and again before resuming.
+Read all current children and relationship state before publication and again before resuming.
 Compare stable markers first, then exact titles, full canonical body hashes, parent membership, and
 edges. Classify the remote state:
 
-- `EXACT_MATCH`: every authorized item and edge matches. Reuse it; make no duplicate write.
-- `AUTHORIZED_MISSING`: observed state is an exact subset of the same authorized draft. After
-  revalidating authorization, create or wire only the missing authorized items.
+- `EXACT_MATCH`: every Plan-bound item and edge matches. Reuse it; make no duplicate write.
+- `AUTHORIZED_MISSING`: observed state is an exact subset of the same current Plan draft. After
+  revalidating publication preconditions, create or wire only the missing items.
 - `CONFLICT`: any unknown marker, duplicate, changed title/body, wrong parent, extra or changed
   edge, or non-subset state. Stop `BLOCKED`. Do not edit, close, delete, duplicate, or adopt it.
-  Freeze a replacement draft and obtain new explicit authorization.
+  Freeze a replacement draft; do not mutate until its publication preconditions are valid.
 
 Loose search results are collision candidates, never proof. Include open and closed issues. Do not
 repair a conflict by guessing intent.
 
-## Explicit authorization gate
+## Automatic publication gate
 
-Present the exact frozen draft before any mutation: authenticated login and account ID, repository,
-parent, capability receipt, each child title and full-body hash, ordered edges, collision result,
-and draft SHA-256. Ask the user to explicitly authorize that exact draft.
+Before any mutation, derive the exact frozen draft from the current validated Plan and verify the
+authenticated login and account ID, repository, parent, capability receipt, each child title and
+full-body hash, ordered edges, collision result, and draft SHA-256.
 
-Authorization evidence is an authenticated parent-user-message receipt binding the parent thread,
-exact draft SHA-256, exact message SHA-256, and message timestamp. The message itself, or one
-authenticated `response-annotations` selection in that message, must explicitly and affirmatively
-approve or authorize that exact graph draft hash. Selected text must match the same exact approval
-grammar as a direct message; surrounding quoted assistant text is never authority. Negated,
-revoked, rejected, or conflicting language fails closed. Approval of a Plan, a previous draft, or
-“continue” from before the draft was frozen is not graph authorization. Reauthenticate the receipt
-before every write. A later direct user request that revokes, rejects, withdraws, or conflicts with
-the approved draft invalidates the receipt; merely quoting or repeating the hash in a response
-annotation does not. Drift invalidates authorization. Never broaden authorization to later edits or
-unknown recovery actions.
+The validated Plan is the publication authority; no second user message or hash-specific approval is
+required. Any Plan, identity, repository, capability, or collision drift fails closed before a
+write. Never broaden publication beyond the current deterministic Plan graph or adopt unknown
+recovery state.
 
 ## Transaction and action ledger
 
 Use the repository's `scripts/graph_transaction.py` coordinator (or an
 equivalent adapter that preserves its guard/runner/read-back contract). The
-coordinator revalidates identity, capability, authorization, and privacy before
+coordinator revalidates identity, capability, Plan binding, and privacy before
 every mutation; records `attempted` before dispatch; then requires authenticated
 remote read-back before recording `verified`.
 
-After authorization, perform one mutation at a time in draft order:
+After the automatic publication gate passes, perform one mutation at a time in draft order:
 
 1. Re-run identity, repository, parent, capability, and collision preflight.
 2. Create one missing child with its complete frozen body and native parent relationship.
@@ -131,8 +124,8 @@ tokens, private prompts, PII, and unsupported performance or quality claims.
 ## Recovery and completion proof
 
 On resume, read remote state first. `AUTHORIZED_MISSING` permits only the exact missing subset from
-the still-current authorized draft; preserve prior action ordering and append new records.
-`EXACT_MATCH` needs no mutation. `CONFLICT` needs a new draft and new authorization.
+the still-current Plan draft; preserve prior action ordering and append new records.
+`EXACT_MATCH` needs no mutation. `CONFLICT` needs a new draft and valid publication preconditions.
 
 Completion requires authenticated remote proof of every stable marker, exact child body hash,
 native parent, ordered edge, and ledger ordering. Report URLs and hashes, but do not call Plan

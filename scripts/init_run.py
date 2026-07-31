@@ -233,7 +233,6 @@ def main() -> int:
         "graph_policy_receipt": {},
         "graph_capability_receipt": {},
         "graph_draft": {},
-        "graph_authorization": {},
         "graph_actions": [],
         "graph_remote_state": {},
         "selected_winner": "",

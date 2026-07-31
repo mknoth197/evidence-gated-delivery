@@ -100,7 +100,6 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "graph_policy_receipt": {},
   "graph_capability_receipt": {},
   "graph_draft": {},
-  "graph_authorization": {},
   "graph_actions": [],
   "graph_remote_state": {},
   "selected_winner": "",
@@ -181,8 +180,8 @@ workflow-identity upgrade.
 
 `plan_events` must remain append-only and hash-chained. A `CHECKPOINT_VALID` event is diagnostic;
 only the phase validator may emit `VALID`. `GRAPH_REQUIRED` also requires a current capability
-receipt, exact draft authorization, ordered attempted/verified action records, and authenticated
-remote graph state. Graph publication is a separately authorized external write.
+receipt, exact current Plan draft, ordered attempted/verified action records, and authenticated
+remote graph state. Graph publication is automatically derived from a validated Plan.
 
 ## Initiative identity, visual grounding, and external actions
 

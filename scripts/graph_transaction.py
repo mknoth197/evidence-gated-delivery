@@ -14,6 +14,7 @@ from plan_protocol import (
     PlanProtocolError,
     privacy_violations,
     reconcile_graph_state,
+    verify_graph_publication,
     verify_graph_authorization,
 )
 
@@ -137,6 +138,46 @@ def authorization_guard(
             ("draft", draft),
             ("capability_receipt", capability_receipt),
         ):
+            errors.extend(
+                f"privacy sentinel: {violation}"
+                for violation in privacy_violations(value, f"$.{field}")
+            )
+        return errors
+
+    return check
+
+
+def publication_guard(
+    draft: dict[str, Any],
+    capability_receipt: dict[str, Any],
+    *,
+    live_evidence: LiveEvidence,
+) -> Guard:
+    """Recheck deterministic Plan-graph publication preconditions per write."""
+
+    def check() -> list[str]:
+        observed = live_evidence()
+        required = (
+            "github_login",
+            "github_account_id",
+            "repository",
+            "parent_issue_url",
+            "capability_receipt",
+        )
+        missing = [field for field in required if field not in observed]
+        if missing:
+            return [f"live graph evidence is missing {field}" for field in missing]
+        errors = verify_graph_publication(
+            draft,
+            current_login=str(observed["github_login"]),
+            current_account_id=str(observed["github_account_id"]),
+            current_repository=str(observed["repository"]),
+            current_parent_issue_url=str(observed["parent_issue_url"]),
+            capability_receipt=observed["capability_receipt"],
+        )
+        if observed["capability_receipt"] != capability_receipt:
+            errors.append("live capability receipt differs from the publication receipt")
+        for field, value in (("draft", draft), ("capability_receipt", capability_receipt)):
             errors.extend(
                 f"privacy sentinel: {violation}"
                 for violation in privacy_violations(value, f"$.{field}")

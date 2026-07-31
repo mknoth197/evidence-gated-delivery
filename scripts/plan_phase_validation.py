@@ -13,7 +13,7 @@ from plan_protocol import (
     PlanProtocolError, evaluate_graph_policy, issue_body_sha256, parse_tasks,
     plan_audit_callback_marker, privacy_violations, reconcile_graph_state,
     validate_plan_audits, validate_plan_events, validate_protocol_activation_receipt,
-    validate_protocol_version, verify_final_graph, verify_graph_authorization,
+    validate_protocol_version, verify_final_graph, verify_graph_publication,
 )
 
 
@@ -25,7 +25,6 @@ class PlanProtocolDependencies:
     collaboration_delegated_audit_evidence: Callable[..., Any]
     persisted_delegation_role_matches: Callable[..., bool]
     authoritative_graph_draft_errors: Callable[..., list[str]]
-    verify_parent_graph_authorization: Callable[..., list[str]]
     _gh_json: Callable[..., Any]
     _live_graph_capabilities: Callable[..., Any]
     _remote_graph_state: Callable[..., Any]
@@ -110,6 +109,8 @@ def validate_plan_protocol_evidence(
     for field in (
         "plan_audits",
         "graph_draft",
+        # Legacy manifests may contain this retired field; it remains subject to
+        # privacy inspection even though it no longer controls publication.
         "graph_authorization",
         "graph_actions",
         "graph_remote_state",
@@ -217,7 +218,6 @@ def validate_plan_protocol_evidence(
     if computed_policy["disposition"] == "NO_GRAPH":
         forbidden_event_types = {
             "graph_draft_frozen",
-            "graph_authorized",
             "graph_action_recorded",
             "graph_reconciled",
         }
@@ -226,7 +226,6 @@ def validate_plan_protocol_evidence(
         for field in (
             "graph_capability_receipt",
             "graph_draft",
-            "graph_authorization",
             "graph_actions",
             "graph_remote_state",
         ):
@@ -246,7 +245,6 @@ def validate_plan_protocol_evidence(
         return
     for event_type in (
         "graph_draft_frozen",
-        "graph_authorized",
         "graph_action_recorded",
         "graph_reconciled",
     ):
@@ -268,7 +266,6 @@ def validate_plan_protocol_evidence(
         )
     )
     capability = data.get("graph_capability_receipt")
-    authorization = data.get("graph_authorization")
     login = capability.get("github_login", "") if isinstance(capability, dict) else ""
     account_id = (
         str(capability.get("github_account_id", ""))
@@ -311,8 +308,7 @@ def validate_plan_protocol_evidence(
                 errors.append("live gh lacks required native graph capabilities")
     if isinstance(draft, dict) and isinstance(capability, dict):
         errors.extend(
-            verify_graph_authorization(
-                authorization,
+            verify_graph_publication(
                 draft,
                 current_login=login,
                 current_account_id=account_id,
@@ -320,9 +316,6 @@ def validate_plan_protocol_evidence(
                 current_parent_issue_url=data.get("implementation_issue_url", ""),
                 capability_receipt=capability,
             )
-        )
-        errors.extend(
-            deps.verify_parent_graph_authorization(data, authorization, draft)
         )
         recorded_remote_state = data.get("graph_remote_state")
         if not skip_remote:

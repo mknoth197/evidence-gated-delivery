@@ -128,7 +128,7 @@ Required:
 - final mockup is attached or durably linked from the implementation issue when
   `generative_mockup` applies;
 - stable tasks parse without ambiguity and `graph-policy/v1` is recomputed;
-- `GRAPH_REQUIRED` has an exact authorized draft plus remotely verified native graph;
+- `GRAPH_REQUIRED` has an exact current Plan draft plus remotely verified native graph;
 - `NO_GRAPH` has a validator-recomputed receipt;
 - external publication claims include successful mutation, remote read-back, durable URL/hash, and
   issue-body linkage; composer state or an attachment-only comment does not qualify;

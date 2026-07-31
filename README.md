@@ -142,12 +142,12 @@ python3 scripts/run_status.py /tmp/evidence-gated-delivery-run.json
 New runs use immutable `plan-protocol/v2`. A Plan is linted, independently audited, bound to the
 exact remotely read GitHub issue body, and parsed into stable `T-NNN` tasks. `graph-policy/v1`
 selects `NO_GRAPH` only for at most three tasks, no dependency edges, and one owner lane; every
-other Plan requires an exact, separately authorized native GitHub sub-issue graph.
+other Plan publishes a deterministic native GitHub sub-issue graph.
 
-Graph publication is never implied by ordinary Plan or implementation approval. The frozen draft,
-authenticated account, repository, parent, CLI capabilities, child bodies, and dependency edges
-must all match the explicit authorization. Recovery resumes only an exact authorized subset and
-never edits or deletes conflicting remote state.
+Graph publication is implied by a validated Plan. The frozen draft, authenticated account,
+repository, parent, CLI capabilities, child bodies, and dependency edges must all match current
+state before every write. Recovery resumes only an exact Plan-bound subset and never edits or
+deletes conflicting remote state.
 
 The bundled planning skills are portable reimplementations informed by
 `lousy-agents/skills` at the pinned provenance revision. See
@@ -260,8 +260,9 @@ its transcript safely readable, the run remains blocked.
 ## Safety model
 
 The workflow defaults external systems to read-only. It requires explicit authorization for
-publication, deployments, feature flags, and other writes. It records the mutation, read-back,
-and durable output before reporting an action as verified.
+deployments, feature flags, and other writes; deterministic graph publication is implied by a
+validated Plan. It records the mutation, read-back, and durable output before reporting an action
+as verified.
 
 ## License
 
