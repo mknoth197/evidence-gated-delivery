@@ -349,8 +349,10 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
     match = re.fullmatch(r"Execution auditor phase: ([a-z-]+)", expected_marker)
     return bool(
         match
-        and task_name
-        == f"execution_auditor_phase_{match.group(1).replace('-', '_')}"
+        and re.fullmatch(
+            rf"execution_auditor_phase_{match.group(1).replace('-', '_')}(?:_[1-9][0-9]*)?",
+            task_name,
+        )
     )
 
 
