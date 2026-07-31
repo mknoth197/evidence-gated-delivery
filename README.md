@@ -1,6 +1,6 @@
 # Evidence-Gated Delivery
 
-An auditable Research → Plan → Implement → Review workflow for agentic engineering work.
+An auditable, tiered workflow for agentic engineering work.
 
 It treats agents as **model + harness**: the model generates and reasons, while durable artifacts,
 tests, independent review, validator receipts, and explicit stop gates make outcomes trustworthy.
@@ -19,6 +19,33 @@ tests, independent review, validator receipts, and explicit stop gates make outc
 - Independent execution audits before phase transitions.
 - Phase retrospectives with a fixed, evidence-backed rubric and degradation detection.
 - Autonomous phase transitions only after an independent technical-confidence judgment passes.
+
+## Proportionate delivery
+
+The workflow selects the smallest tier that can responsibly complete the request. A user may ask
+for a higher tier; hard-risk signals always raise the floor.
+
+| Tier | Use it for | Required harness |
+| --- | --- | --- |
+| Quick | Local, clear, reversible work | Current source evidence and a targeted check. |
+| Balanced | Moderate uncertainty or multi-surface work | A concise contract, two current sources, checks, and verified external actions. |
+| Deep | High-risk, ambiguous, cross-team, production, privacy, or protected-write work | The complete Research → Plan → Implement → Review artifact chain. |
+
+Run the deterministic router before initializing a new run. It records the evidence and an
+authority envelope: direct user intent implies ordinary scoped inspection, edits, and tests; it
+does not imply protected external writes, destructive or irreversible work, production/release
+changes, or sensitive-data access.
+
+```bash
+python3 scripts/intent_router.py --scope medium --ambiguity medium \
+  --novelty medium --external-impact ordinary > /tmp/routing-decision.json
+python3 scripts/init_run.py --mode balanced --goal "Your goal" --repo /path/to/git-worktree \
+  --routing-decision /tmp/routing-decision.json
+```
+
+Pass the resulting JSON with `--routing-decision` to `init_run.py`. Use
+`scripts/validate_tier.py` for Quick and Balanced receipts. Deep continues to use
+`scripts/validate_run.py` unchanged.
 
 ## Continuous improvement
 
@@ -58,6 +85,8 @@ production/release changes, or work with missing authority.
 SKILL.md                 Workflow instructions for an agent harness
 references/              Phase contracts, role contracts, publication, retrospective rubric
 scripts/init_run.py      Creates a durable run manifest
+scripts/intent_router.py Deterministically grades the delivery tier and authority envelope
+scripts/validate_tier.py Validates Quick and Balanced receipts; delegates Deep to the existing validator
 scripts/validate_run.py  Validates phase transitions and writes receipts
 scripts/preflight_plan.py Validates a draft plan before publication
 scripts/plan_protocol.py Plan protocol, task, audit, event, graph, and recovery invariants
