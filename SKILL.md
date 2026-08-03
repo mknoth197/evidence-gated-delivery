@@ -24,15 +24,23 @@ RESEARCH -> research artifact -> PLAN -> implementation artifact -> IMPLEMENT ->
 Every phase must revalidate its input against current reality. Durable artifacts, not chat memory,
 carry authority between phases.
 
+Use one coherent workflow release per run. When operating from this repository, run
+`scripts/verify_skill_sync.py --installed-skill <active-skill-dir>` before a Deep mutation if an
+installed copy exists. If it reports drift, do not mix scripts from the checkout and installed
+copy: execute from the current repository release, record the drift, and treat distribution repair
+as ordinary recoverable work. Never classify remote state as a conflict using a stale reconciler.
+
 Use `scripts/intent_router.py` internally to assess scope, ambiguity, reversibility, data risk,
 novelty, external impact, and hard-stop signals. A user may request a higher tier, but never has
 to invoke a tier, provide a routing file, or repeat an approval in a prescribed phrase.
 Protected external writes, destructive or irreversible actions, production or release actions,
-and sensitive-data access always select Deep and require explicit authority. For ordinary scoped
-work, direct user intent implies authority to inspect, edit, test, reconcile, and complete
-ordinary dependent recovery steps. Treat this as a **progress corridor**: batch those actions and
-keep moving until a proposed action crosses a hard boundary or materially expands scope. Do not
-turn a discovered sub-step into a new approval question.
+sensitive-data access, missing authority, and material architecture ambiguity always select Deep
+and require explicit authority or resolution. For ordinary scoped work, direct user intent implies
+authority to inspect, edit, test, reconcile, repair, create a branch and commits, publish or update
+a review branch, pull request, or scoped issue, and verify those actions through read-back. Treat
+this as a **progress corridor**: batch low-risk, reversible actions and keep moving until a proposed
+action crosses a named hard boundary or materially expands scope. Do not turn a discovered
+ordinary sub-step or validator gate into a new approval question.
 
 Maintain one **execution frontier**: the next material action, its recovery state (`continue`,
 `repair`, `escalate`, or `retire`), and the evidence delta expected from it. Log a progress event
@@ -46,7 +54,8 @@ every deterministic gate passes and a fresh independent Phase Transition Judge r
 phase at least `8/10` for confidence and `3/4` for technical accuracy. A user may request a stop
 before `plan`, `implement`, or `review` at any time; that explicit stop wins over automation until
 the user releases it. Protected external writes, destructive or irreversible actions, production
-or release actions, and missing authority remain hard stops and are never bypassed by a score.
+or release actions, sensitive-data access, missing authority, and material architecture ambiguity
+remain hard stops and are never bypassed by a score.
 
 Read [phase-contracts.md](references/phase-contracts.md) and
 [run-manifest.md](references/run-manifest.md) when beginning a run. Read only the active phase plus
@@ -271,8 +280,17 @@ tier. Threads are a core capability, not a Deep-only ceremony. Use
 
 ### Safety
 
-- Default external systems to read-only unless the user explicitly authorizes writes.
-- Never infer approval for production, telemetry, feature-flag, cloud, or destructive writes.
+- Classify the action, not merely whether it writes. Ordinary scoped, recoverable external writes
+  such as a review branch, pull request, issue, comment, or exact graph publication remain inside
+  the progress corridor and require immediate read-back.
+- Pause only for a named hard boundary: protected external writes; destructive or irreversible
+  actions; production or release actions; sensitive-data access; missing authority; or material
+  architecture ambiguity that changes a public contract, persistence model, security boundary, or
+  irreversible migration. An unknown or contradictory risk classification fails closed.
+- Never infer authority to merge, deploy, release, mutate production flags or cloud resources,
+  change credentials or accounts, access sensitive data, delete data, or force-overwrite history.
+- A validator is an evidence gate, not automatically a permission gate. Never bypass it, but repair
+  ordinary failures autonomously when the repair remains inside the authority envelope.
 - Honor repository-specific approval gates and quality commands.
 - Do not weaken tests or acceptance criteria merely to make a gate pass.
 
@@ -560,8 +578,9 @@ This is a convenience loop that invokes the same modes without weakening them:
 2. Execute Plan Mode and satisfy the complete Plan Exit Contract before transition, including the
    tournament, visual disposition, applicable evidence mode, confidence, feature-to-spec
    redirection, Plan audit, graph policy, GitHub issue, and accounting requirements.
-3. Execute the complete Implement Orientation Contract and stop for explicit approval.
-4. After approval, execute Implement Mode and satisfy the complete Implement Exit Contract.
+3. Execute the complete Implement Orientation Contract and honor any user-requested stop or named
+   hard boundary.
+4. Otherwise continue into Implement Mode and satisfy the complete Implement Exit Contract.
 5. Open the PR and report the Review invocation.
 
 Even in orchestrate mode:

@@ -33,9 +33,16 @@ for a higher tier; hard-risk signals always raise the floor.
 
 The agent runs the deterministic router internally. It should not ask users to select a tier or
 provide a routing file. Direct user intent opens a progress corridor for ordinary scoped
-inspection, edits, tests, reconciliation, and dependent recovery steps. The agent pauses only for
-protected external writes, destructive or irreversible work, production/release changes,
-sensitive-data access, or material scope expansion.
+inspection, edits, tests, reconciliation, dependent recovery, branches, commits, review-branch or
+pull-request publication, scoped issues, and verified read-back. The agent pauses only for named
+hard boundaries: protected external writes, destructive or irreversible work, production/release
+changes, sensitive-data access, missing authority, or material architecture ambiguity. Unknown or
+contradictory risk classifications fail closed.
+
+A Deep run uses one coherent workflow release. Before mutation, the repository release can be
+compared with the active installed copy using `verify_skill_sync.py`; detected drift must never be
+papered over by mixing scripts from both versions. The current repository release remains the
+authority for repository work until its reviewed distribution update is installed.
 
 ```bash
 python3 scripts/intent_router.py --scope medium --ambiguity medium \
@@ -75,7 +82,9 @@ judge—derives the final `auto_proceed` decision.
 Users can request a human stop before `plan`, `implement`, or `review`. A stop gate always wins,
 even over a 10/10 judgment, and requires a later explicit user release recorded in the run manifest.
 Autonomy never authorizes protected external writes, destructive or irreversible actions,
-production/release changes, or work with missing authority.
+production/release changes, sensitive-data access, work with missing authority, or material
+architecture ambiguity affecting public contracts, persistence, security, or irreversible
+migrations.
 
 ## Layout
 
@@ -259,10 +268,13 @@ its transcript safely readable, the run remains blocked.
 
 ## Safety model
 
-The workflow defaults external systems to read-only. It requires explicit authorization for
-deployments, feature flags, and other writes; deterministic graph publication is implied by a
-validated Plan. It records the mutation, read-back, and durable output before reporting an action
-as verified.
+The workflow distinguishes ordinary, recoverable writes from protected mutations. Direct intent
+authorizes ordinary scoped work such as review branches, pull requests, issues, comments, and
+deterministic graph publication; each is read back before it is reported as verified. It stops for
+merge, deploy or release, production flags or cloud resources, credential or account changes,
+sensitive-data access, deletion, force-overwrite, missing authority, or material architecture
+ambiguity. Validators remain mandatory evidence gates, but they do not create additional approval
+gates for an in-scope repair.
 
 ## License
 

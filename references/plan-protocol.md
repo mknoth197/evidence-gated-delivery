@@ -146,7 +146,7 @@ receipt.
 
 A frozen graph draft is deterministically derived from the canonical tasks parsed from the
 authoritative implementation issue. It records the parent issue URL, repository, exact child titles
-and complete bodies, stable markers, child-body hashes, and ordered dependency edges. Its SHA-256
+and complete bodies, stable markers, child-body hashes, and canonical dependency edges. Its SHA-256
 covers the complete canonical object. Validation requires the supplied draft to equal that derived
 object before publication or reconciliation.
 
@@ -173,8 +173,12 @@ Remote graph state has exactly three recovery classes:
 - `CONFLICT`: stop in `BLOCKED`; do not edit, delete, close, or duplicate unknown state. Freeze a
   new draft and re-evaluate publication preconditions.
 
-Final graph proof verifies stable task markers, child body hashes, parent membership, ordered
-dependency edges, and action ordering from authenticated remote read-back.
+GitHub relationship connections are a set-valued contract. The API may return the same blockers in
+newest-first or another presentation order, so reconciliation compares exact edge membership while
+still rejecting duplicates, missing edges at the final gate, and unexpected edges.
+
+Final graph proof verifies stable task markers, child body hashes, parent membership, exact
+dependency-edge membership, and action-ledger chronology from authenticated remote read-back.
 
 ## Privacy and provenance
 

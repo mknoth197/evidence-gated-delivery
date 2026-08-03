@@ -37,7 +37,7 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
     "auto_transition_min_confidence": 8,
     "stop_before_phases": [],
     "released_stop_gates": [],
-    "hard_stop_categories": ["protected_external_write", "destructive_or_irreversible", "production_or_release", "missing_authority"]
+    "hard_stop_categories": ["destructive_or_irreversible", "material_architecture_ambiguity", "missing_authority", "production_or_release", "protected_external_write", "sensitive_data_access"]
   },
   "execution_frontier": {
     "next_material_action": "",

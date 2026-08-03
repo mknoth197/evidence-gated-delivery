@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from delegation_router import choose, validate_charter
 
 
-CORRIDOR = {"continue_without_prompt": ["inspect", "reconcile", "repair", "test", "read_back"]}
+CORRIDOR = {"continue_without_prompt": ["inspect", "edit", "test", "reconcile", "repair", "branch", "commit", "push_review_branch", "open_or_update_pull_request", "publish_scoped_issue", "read_back"]}
 
 
 class DelegationRouterTests(unittest.TestCase):

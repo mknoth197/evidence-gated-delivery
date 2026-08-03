@@ -17,7 +17,22 @@ HARD_STOP_ACTIONS = {
     "destructive_or_irreversible",
     "production_or_release",
     "sensitive_data_access",
+    "missing_authority",
+    "material_architecture_ambiguity",
 }
+LOW_RISK_ACTIONS = (
+    "inspect",
+    "edit",
+    "test",
+    "reconcile",
+    "repair",
+    "branch",
+    "commit",
+    "push_review_branch",
+    "open_or_update_pull_request",
+    "publish_scoped_issue",
+    "read_back",
+)
 
 
 def route(
@@ -64,17 +79,11 @@ def route(
         "evidence": {**levels, "external_impact": external_impact, "hard_stops": hard_stops},
         "hard_floor_reasons": sorted(set(floor_reasons)),
         "authority_envelope": {
-            "ordinary_scoped_work": ["inspect", "edit", "test"],
+            "ordinary_scoped_work": list(LOW_RISK_ACTIONS),
             "requires_explicit": sorted(HARD_STOP_ACTIONS),
         },
         "progress_corridor": {
-            "continue_without_prompt": [
-                "inspect",
-                "reconcile",
-                "repair",
-                "test",
-                "read_back",
-            ],
+            "continue_without_prompt": list(LOW_RISK_ACTIONS),
             "pause_only_for": sorted(HARD_STOP_ACTIONS),
         },
         "rationale": (

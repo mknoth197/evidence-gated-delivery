@@ -149,7 +149,9 @@ Before mutation, report:
 - approval and stop gates;
 - required targeted, canonical, browser, CI, and stack checks.
 
-Wait for explicit approval unless implementation was explicitly approved in the invocation.
+The implementation request authorizes ordinary scoped implementation and review-branch
+publication. Wait only when the user requested a human stop or the next action crosses a named
+hard boundary; a validator failure is repaired autonomously when the repair remains in scope.
 
 ## Implement Exit Contract
 
