@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from projection_bundle import (
+    validate_projection_bundle,
+    validate_projection_transaction_receipt,
+)
+
+
 CAPSULE = (ROOT / "references" / "context-capsule-v1.md").read_text(encoding="utf-8")
 BUNDLE = (ROOT / "references" / "projection-bundle-v1.md").read_text(encoding="utf-8")
 PHASES = (ROOT / "references" / "phase-contracts.md").read_text(encoding="utf-8")
@@ -137,6 +145,7 @@ class AssuranceContractTests(unittest.TestCase):
 
     def test_prepared_bundle_and_transaction_receipt_have_separate_identity(self):
         prepared, receipt = json_examples(BUNDLE)
+        example_authority_bytes = b"example plan authority\n"
         self.assertEqual(prepared["schema_version"], "projection-bundle/v1")
         self.assertEqual(receipt["schema_version"], "projection-transaction-receipt/v1")
         self.assertEqual(receipt["bundle_id"], prepared["bundle_id"])
@@ -147,6 +156,21 @@ class AssuranceContractTests(unittest.TestCase):
         for state in ("present", "omitted", "pending", "blocked"):
             self.assertIn(f"`{state}`", BUNDLE)
         self.assertIn("never mutate the prepared identity", BUNDLE)
+        required_slots = ["context", "tournament"]
+        self.assertEqual(
+            validate_projection_bundle(
+                prepared,
+                authority_bytes=example_authority_bytes,
+                required_slots=required_slots,
+            ),
+            [],
+        )
+        self.assertEqual(
+            validate_projection_transaction_receipt(
+                receipt, bundle=prepared, required_slots=required_slots
+            ),
+            [],
+        )
 
     def test_ac_012_migration_is_honest_and_rollback_is_lossless(self):
         for document in (CAPSULE, BUNDLE):

@@ -113,6 +113,25 @@ class ProjectionKernelTests(unittest.TestCase):
         self.assertNotEqual(first["prepared_digest"], changed["prepared_digest"])
         self.assertNotEqual(first["bundle_id"], changed["bundle_id"])
 
+    def test_loaded_bundle_rejects_false_authority_byte_length(self):
+        prepared = run_kernel()["bundle"]
+        tampered = copy.deepcopy(prepared)
+        tampered["authority"]["byte_length"] += 1
+        tampered["prepared_digest"] = bundle.prepared_bundle_digest(tampered)
+        tampered["bundle_id"] = bundle.bundle_id_for_digest(
+            tampered["prepared_digest"]
+        )
+
+        errors = bundle.validate_projection_bundle(
+            tampered,
+            authority_bytes=AUTHORITY_BYTES,
+            required_slots=["tasks"],
+        )
+
+        self.assertTrue(
+            any("authority.byte_length conflict" in error for error in errors), errors
+        )
+
     def test_later_evidence_changes_receipt_not_prepared_identity(self):
         prepared = run_kernel()["bundle"]
         first = bundle.build_projection_transaction_receipt(

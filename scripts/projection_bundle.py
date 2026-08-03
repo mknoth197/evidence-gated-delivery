@@ -287,15 +287,22 @@ def validate_projection_bundle(
             errors.append("authority bytes must be an immutable bytes value")
         else:
             observed = authority_bytes_sha256(authority_bytes)
-            claimed = (
-                bundle.get("authority", {}).get("bytes_digest")
-                if isinstance(bundle.get("authority"), dict)
-                else None
+            authority = bundle.get("authority", {})
+            claimed_digest = (
+                authority.get("bytes_digest") if isinstance(authority, dict) else None
             )
-            if claimed != observed:
+            if claimed_digest != observed:
                 errors.append(
                     "projection bundle authority.bytes_digest conflict: "
-                    f"expected {observed}, observed {claimed}"
+                    f"expected {observed}, observed {claimed_digest}"
+                )
+            claimed_length = (
+                authority.get("byte_length") if isinstance(authority, dict) else None
+            )
+            if claimed_length != len(authority_bytes):
+                errors.append(
+                    "projection bundle authority.byte_length conflict: "
+                    f"expected {len(authority_bytes)}, observed {claimed_length}"
                 )
     return errors
 

@@ -169,19 +169,19 @@ Prepared bundle with an honest Light omission:
 ```json
 {
   "schema_version": "projection-bundle/v1",
-  "bundle_id": "pb1-cccccccccccc",
-  "authority": {"kind":"github_issue","locator":"https://github.com/mknoth197/evidence-gated-delivery/issues/24","bytes_digest":"cac311f36c83587a62327cb51a864f14b5fec15c80242acdfb7b9514deb74435","source_revision":"cac311f36c83587a62327cb51a864f14b5fec15c80242acdfb7b9514deb74435","byte_length":1,"sidecar":null},
+  "bundle_id": "pb1-7eb0ee486657",
+  "authority": {"kind":"fixture","locator":"fixture:projection-bundle-v1-authority","bytes_digest":"4707cd5f9d18eb9c4704ee72ca03447942da46a42e151bbd561da0371d8c598a","source_revision":"4707cd5f9d18eb9c4704ee72ca03447942da46a42e151bbd561da0371d8c598a","byte_length":23,"sidecar":null},
   "versions": {"kernel":"projection-kernel/v1","reader":"github-issue-reader/v1","canonicalizer":"github-issue-body/v1"},
   "policy_versions": {"assurance":"assurance-policy/v1","visual":"visual-applicability/v1"},
   "assurance": {"requested":"light","effective":"light","selection_origin":"explicit_assurance","legacy_subprofile":null},
   "capsule_generation": {"capsule_id":"capsule-24","generation":2,"digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
   "slots": {
-    "context": {"state":"present","projection_version":"context-capsule/v1","payload_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    "context": {"state":"present","projection_version":"context-capsule/v1","payload_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","locator":"context-capsule:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
     "tournament": {"state":"omitted","policy_rule_id":"LIGHT_NO_TOURNAMENT","reason":"No design decision is requested","evidence_refs":["scope-24"]}
   },
   "parent_bundle": null,
   "prepared_at": "2026-08-03T16:40:00Z",
-  "prepared_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  "prepared_digest": "7eb0ee486657e126c9bc332c7d7cb78c3e2730b7cd7203b577bf849c3dfd7ff2"
 }
 ```
 
@@ -190,19 +190,19 @@ Blocked transaction after an interrupted remote action:
 ```json
 {
   "schema_version": "projection-transaction-receipt/v1",
-  "transaction_id": "ptx-24",
-  "bundle_id": "pb1-cccccccccccc",
-  "prepared_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "transaction_id": "ptx1-876ac4e2bf06",
+  "bundle_id": "pb1-7eb0ee486657",
+  "prepared_digest": "7eb0ee486657e126c9bc332c7d7cb78c3e2730b7cd7203b577bf849c3dfd7ff2",
   "intent": {"risk_classification":"ordinary_scoped_recoverable","authority_ref":"plan-24","staged_action_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
   "audit_receipts": [],
   "provider_receipts": [],
   "graph_operations": [],
   "gate_outcomes": [],
   "external_actions": [{"target":"issue-25","started_evidence":"event-1","mutation_receipt":"command-exit-0","readback_evidence":null,"durable_output":null,"state":"started"}],
-  "slot_outcomes": {},
+  "slot_outcomes": {"context":{"state":"verified","prepared_state":"present"},"tournament":{"state":"omitted","prepared_state":"omitted"}},
   "final_state": "blocked",
   "blockers": [{"code":"BLOCKED_REMOTE_READBACK_MISMATCH","evidence_refs":["event-1"],"next_safe_action":"Read the remote issue and reconcile"}],
   "completed_at": "2026-08-03T16:41:00Z",
-  "receipt_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  "receipt_digest": "876ac4e2bf06dc6b82a67d354815d9dd1bcf9e2d39d0f8c565ac8b012ade2543"
 }
 ```
