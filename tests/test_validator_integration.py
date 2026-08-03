@@ -813,6 +813,56 @@ No UI.
         )
         self.assertTrue(any("privacy sentinel" in error for error in errors))
 
+    def test_invalid_recorded_graph_is_reported_without_validator_crash(self):
+        manifest = self.manifest()
+        graph_body = """# Plan
+
+## Tasks
+
+- [ ] **T-001 — First task.** Objective: first. Context: graph. Affected modules: `a`. Requirements: work. Verification: test. Complete when: done. Owner lane: core. `depends_on: []`.
+
+- [ ] **T-002 — Second task.** Objective: second. Context: graph. Affected modules: `b`. Requirements: work. Verification: test. Complete when: done. Owner lane: core. `depends_on: [T-001]`.
+
+## Out of Scope
+
+No UI.
+"""
+        graph_tasks = plan_protocol.parse_tasks(graph_body)
+        manifest.update(
+            {
+                "implementation_issue_url": "https://github.com/o/r/issues/1",
+                "graph_policy_receipt": plan_protocol.evaluate_graph_policy(
+                    graph_tasks, evaluated_at="2026-07-29T12:10:00Z"
+                ),
+                "graph_draft": {
+                    "schema_version": "graph-draft/v1",
+                    "repository": "o/r",
+                    "parent_issue_url": "https://github.com/o/r/issues/1",
+                    "children": [
+                        {
+                            "task_id": "T-001",
+                            "stable_marker": "<!-- evidence-gated-delivery-task:T-001 -->",
+                            "title": "Validate plan",
+                            "body": "tampered",
+                            "body_sha256": "0" * 64,
+                        }
+                    ],
+                    "edges": [],
+                    "draft_sha256": "0" * 64,
+                },
+                "graph_capability_receipt": {},
+                "graph_remote_state": {"children": [], "edges": []},
+            }
+        )
+        errors: list[str] = []
+        validator.validate_plan_protocol_evidence(
+            manifest, graph_body, errors, skip_remote=True
+        )
+        self.assertTrue(
+            any("graph reconciliation evidence is invalid" in error for error in errors),
+            errors,
+        )
+
 
 class RemoteGraphReadbackTests(unittest.TestCase):
     url = "https://github.com/o/r/issues/1"

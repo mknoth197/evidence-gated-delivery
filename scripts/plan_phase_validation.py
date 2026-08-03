@@ -327,12 +327,18 @@ def validate_plan_protocol_evidence(
             elif live_state != recorded_remote_state:
                 errors.append("graph_remote_state does not match authenticated GitHub read-back")
         if isinstance(recorded_remote_state, dict):
-            reconciliation = reconcile_graph_state(draft, recorded_remote_state)
-            if reconciliation.get("classification") != "EXACT_MATCH":
-                errors.append(f"remote graph is not exact: {reconciliation}")
-            errors.extend(
-                verify_final_graph(draft, recorded_remote_state, data.get("graph_actions"))
-            )
+            try:
+                reconciliation = reconcile_graph_state(draft, recorded_remote_state)
+            except PlanProtocolError as exc:
+                errors.append(f"graph reconciliation evidence is invalid: {exc}")
+            else:
+                if reconciliation.get("classification") != "EXACT_MATCH":
+                    errors.append(f"remote graph is not exact: {reconciliation}")
+                errors.extend(
+                    verify_final_graph(
+                        draft, recorded_remote_state, data.get("graph_actions")
+                    )
+                )
 
 
 def add_plan_errors(
