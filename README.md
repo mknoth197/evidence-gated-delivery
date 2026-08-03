@@ -39,6 +39,22 @@ hard boundaries: protected external writes, destructive or irreversible work, pr
 changes, sensitive-data access, missing authority, or material architecture ambiguity. Unknown or
 contradictory risk classifications fail closed.
 
+All tiers share the digest-chained
+[`context-capsule/v1`](references/context-capsule-v1.md) persistence contract. Assurance remains a
+separate choice: Light buys local integrity and the bounded progress corridor; Heavy preserves every
+Deep gate. Existing phase/freeform invocations and legacy Deep remain Heavy. Legacy Quick/Balanced
+map to Light with their prior subprofile gates intact. The immutable prepared authority, separate
+final receipt, and `assurance-policy/v1` rules are defined in
+[`projection-bundle/v1`](references/projection-bundle-v1.md).
+
+```text
+$evidence-gated-delivery [--assurance light|heavy] <research|plan|implement|review|orchestrate> <authority-or-goal>
+```
+
+The selector occurs at most once immediately after the skill name; `status` rejects it. Light never
+authorizes merge, deployment/release, production/cloud changes, provider activation,
+credential/account mutation, sensitive-data access, deletion, force-overwrite, or telemetry writes.
+
 A Deep run uses one coherent workflow release. Before mutation, the repository release can be
 compared with the active installed copy using `verify_skill_sync.py`; detected drift must never be
 papered over by mixing scripts from both versions. The current repository release remains the
