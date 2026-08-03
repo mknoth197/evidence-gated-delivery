@@ -14,6 +14,8 @@ HARD_BOUNDARIES = {
     "destructive_or_irreversible",
     "production_or_release",
     "sensitive_data_access",
+    "missing_authority",
+    "material_architecture_ambiguity",
 }
 
 

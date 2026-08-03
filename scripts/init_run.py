@@ -27,6 +27,7 @@ from plan_protocol import (
     protocol_activation_receipt_path,
     record_protocol_activation,
 )
+from intent_router import HARD_STOP_ACTIONS
 
 
 def git(root: Path, *args: str) -> str:
@@ -183,10 +184,7 @@ def main() -> int:
             "stop_before_phases": [],
             "released_stop_gates": [],
             "hard_stop_categories": [
-                "protected_external_write",
-                "destructive_or_irreversible",
-                "production_or_release",
-                "missing_authority",
+                *sorted(HARD_STOP_ACTIONS),
             ],
         },
         "phase_transition_judgments": [],
