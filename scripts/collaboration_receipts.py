@@ -345,7 +345,12 @@ def persisted_delegation_role_matches(arguments: Any, expected_marker: str) -> b
             f"{transition.group(1).replace('-', '_')}_to_"
             f"{transition.group(2).replace('-', '_')}"
         )
-        return task_name == expected_task_name
+        return bool(
+            re.fullmatch(
+                rf"{re.escape(expected_task_name)}(?:_[1-9][0-9]*)?",
+                task_name,
+            )
+        )
     match = re.fullmatch(r"Execution auditor phase: ([a-z-]+)", expected_marker)
     return bool(
         match
