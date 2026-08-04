@@ -25,6 +25,7 @@ def validate_trace_audit(
     phase: str,
     errors: list[str],
     *,
+    prior_role_data: dict[str, Any] | None = None,
     deps: TraceDependencies,
 ) -> None:
     required_phase = "plan" if phase == "orchestrate-preapproval" else phase
@@ -49,6 +50,16 @@ def validate_trace_audit(
     audit_ids = deps.agent_ids(audits)
     other_ids = set(deps.agent_ids(data.get("contestants"))) | set(deps.agent_ids(data.get("judges")))
     other_ids |= set(deps.agent_ids(data.get("implementation_workers")))
+    if isinstance(prior_role_data, dict):
+        for field in (
+            "contestants", "judges", "implementation_workers", "trace_audits",
+            "plan_audits", "phase_retrospectives", "phase_transition_judgments",
+        ):
+            other_ids |= set(deps.agent_ids(prior_role_data.get(field)))
+        for field in ("test_reviewer", "acceptance_reviewer"):
+            entry = prior_role_data.get(field)
+            if isinstance(entry, dict):
+                other_ids |= set(deps.agent_ids([entry]))
     if len(audit_ids) != len(set(audit_ids)) or set(audit_ids) & other_ids:
         errors.append("trace auditors must be fresh and unique")
     events = matching[0].get("verified_event_ids")

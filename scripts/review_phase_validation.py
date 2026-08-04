@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import copy
 import re
 import subprocess
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from typing import Any, Callable
 @dataclass(frozen=True)
 class ReviewDependencies:
     add_plan_errors: Callable[..., None]
+    validate_successor_visual_evidence: Callable[..., None]
     nonempty: Callable[..., bool]
     pr_url: Callable[..., bool]
     github_pr_oids: Callable[..., Any]
@@ -24,14 +26,69 @@ class ReviewDependencies:
     github_readback: Callable[..., Any]
 
 
+def plan_with_successor_visual_evidence(
+    predecessor_plan: dict[str, Any], successor: dict[str, Any], phase: str
+) -> dict[str, Any]:
+    """Project only phase-recomputed visual fields onto authenticated Plan evidence."""
+    projected = dict(predecessor_plan)
+    successor_disposition = successor.get("visual_artifact_disposition")
+    predecessor_disposition = predecessor_plan.get("visual_artifact_disposition")
+    compact_nonvisual = (
+        phase != "review"
+        and isinstance(successor_disposition, dict)
+        and isinstance(predecessor_disposition, dict)
+        and successor_disposition.get("evidence_mode") == "none"
+        and predecessor_disposition.get("evidence_mode") == "none"
+        and not isinstance(successor_disposition.get("scope_inventory"), dict)
+    )
+    if compact_nonvisual:
+        disposition = copy.deepcopy(predecessor_disposition)
+        disposition["phase_binding"] = copy.deepcopy(
+            successor_disposition.get("phase_binding")
+        )
+        for field in ("status", "decision", "evidence_mode"):
+            disposition[field] = successor_disposition.get(field)
+        projected["visual_artifact_disposition"] = disposition
+    elif "visual_artifact_disposition" in successor:
+        projected["visual_artifact_disposition"] = successor_disposition
+    for field in (
+        "runtime_visual_evidence",
+        "rejected_visual_artifacts",
+        "approved_artifact_hosts",
+        "run_started_at",
+        "phase_timeline",
+    ):
+        if field in successor:
+            projected[field] = successor[field]
+    directions = successor.get("visual_user_directions")
+    if isinstance(directions, list) and directions:
+        projected["visual_user_directions"] = directions
+    return projected
+
+
 def add_orientation_errors(
     data: dict[str, Any],
     errors: list[str],
     skip_remote: bool,
     *,
+    predecessor_plan: dict[str, Any] | None = None,
     deps: ReviewDependencies,
 ) -> None:
-    deps.add_plan_errors(data, errors, skip_remote, visual_phase="implement-orientation")
+    plan_evidence = (
+        plan_with_successor_visual_evidence(
+            predecessor_plan, data, "implement-orientation"
+        )
+        if predecessor_plan is not None
+        else data
+    )
+    if predecessor_plan is not None:
+        deps.validate_successor_visual_evidence(
+            plan_evidence, errors, skip_remote, "implement-orientation"
+        )
+    else:
+        deps.add_plan_errors(
+            plan_evidence, errors, skip_remote, visual_phase="implement-orientation"
+        )
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
     if data.get("no_mutation_before_approval") is not True:
@@ -152,15 +209,30 @@ def add_implement_errors(
     visual_phase: str = "implement",
     review_paths: list[str] | None = None,
     *,
+    predecessor_plan: dict[str, Any] | None = None,
+    successor_visual_data: dict[str, Any] | None = None,
     deps: ReviewDependencies,
 ) -> None:
-    deps.add_plan_errors(
-        data,
-        errors,
-        skip_remote,
-        visual_phase=visual_phase,
-        review_paths=review_paths,
+    visual_evidence = successor_visual_data or data
+    plan_evidence = (
+        plan_with_successor_visual_evidence(
+            predecessor_plan, visual_evidence, visual_phase
+        )
+        if predecessor_plan is not None
+        else data
     )
+    if predecessor_plan is not None:
+        deps.validate_successor_visual_evidence(
+            plan_evidence, errors, skip_remote, visual_phase, review_paths
+        )
+    else:
+        deps.add_plan_errors(
+            plan_evidence,
+            errors,
+            skip_remote,
+            visual_phase=visual_phase,
+            review_paths=review_paths,
+        )
     if data.get("orientation_complete") is not True:
         errors.append("orientation_complete must be true")
     mutation_at = deps.timestamp(data.get("first_mutation_at"))
@@ -207,7 +279,10 @@ def add_implement_errors(
             errors,
             deps=deps,
         )
-    all_prior_ids = set(deps.agent_ids(data.get("contestants"))) | set(deps.agent_ids(data.get("judges")))
+    prior_roles = predecessor_plan or data
+    all_prior_ids = set(deps.agent_ids(prior_roles.get("contestants"))) | set(
+        deps.agent_ids(prior_roles.get("judges"))
+    )
     all_ids = worker_ids + [value for value in (test_id, acceptance_id) if value]
     if len(all_ids) != len(set(all_ids)):
         errors.append("implementation workers and reviewers must have unique agent IDs")

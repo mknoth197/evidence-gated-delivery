@@ -195,6 +195,24 @@ class TransitionJudgeSeparationTests(unittest.TestCase):
             },
         )
 
+    def test_imported_review_roles_are_excluded_from_transition_judge(self):
+        current = {"phase": "implement", "agent_id": "current"}
+        prior = {
+            "contestants": [{"agent_id": "plan-contestant"}],
+            "implementation_workers": [{"agent_id": "implement-worker"}],
+            "test_reviewer": {"agent_id": "implement-reviewer"},
+            "trace_audits": [{"agent_id": "implement-auditor"}],
+        }
+        excluded = validator.transition_judge_excluded_ids(
+            {"phase_transition_judgments": [current]},
+            current,
+            prior_role_data=prior,
+        )
+        self.assertTrue(
+            {"plan-contestant", "implement-worker", "implement-reviewer", "implement-auditor"}
+            <= excluded
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
