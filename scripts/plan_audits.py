@@ -5,13 +5,78 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
+
+from plan_tasks import authority_text, present_projection_slot, projection_payload
 
 from plan_protocol_core import (
     AUDIT_KINDS, FINDING_DISPOSITIONS, FINDING_SEVERITIES,
     PlanProtocolError, sha256_json,
 )
 from plan_events import _validate_iso8601
+
+PLAN_AUDIT_INPUTS_PROJECTION_VERSION = "plan-audit-inputs-projection/v1"
+_PLAN_AUDIT_PAYLOAD_FIELDS = frozenset(
+    (
+        "adapter_version",
+        "input_digest",
+        "final_body_sha256",
+        "audits",
+        "disallowed_agent_ids",
+    )
+)
+
+
+def plan_audit_inputs_projection_adapter(
+    *, audits: Iterable[dict[str, Any]], disallowed_agent_ids: Iterable[str] = ()
+):
+    """Bind auditor proof inputs to the same immutable bytes as every projection."""
+
+    import copy
+    from plan_protocol_core import issue_body_sha256
+
+    frozen_audits = copy.deepcopy(list(audits))
+    frozen_disallowed = sorted({str(value) for value in disallowed_agent_ids})
+
+    def project(
+        authority_bytes: bytes,
+        authority_digest: str,
+        versions: Mapping[str, str],
+    ) -> dict[str, Any]:
+        payload = {
+            "adapter_version": PLAN_AUDIT_INPUTS_PROJECTION_VERSION,
+            "input_digest": authority_digest,
+            "final_body_sha256": issue_body_sha256(
+                authority_text(authority_bytes)
+            ),
+            "audits": copy.deepcopy(frozen_audits),
+            "disallowed_agent_ids": list(frozen_disallowed),
+        }
+        return {
+            "authority_digest": authority_digest,
+            "versions": dict(versions),
+            "slot": present_projection_slot(
+                payload, PLAN_AUDIT_INPUTS_PROJECTION_VERSION
+            ),
+        }
+
+    return project
+
+
+def validate_plan_audits_from_projection_bundle(
+    bundle: Mapping[str, Any], slot_name: str = "plan_audit_inputs"
+) -> list[str]:
+    payload = projection_payload(
+        bundle,
+        slot_name,
+        projection_version=PLAN_AUDIT_INPUTS_PROJECTION_VERSION,
+        payload_fields=_PLAN_AUDIT_PAYLOAD_FIELDS,
+    )
+    return validate_plan_audits(
+        payload["audits"],
+        final_body_sha256=payload["final_body_sha256"],
+        disallowed_agent_ids=payload["disallowed_agent_ids"],
+    )
 
 def _audit_result_hash(audit: dict[str, Any]) -> str:
     return sha256_json({key: value for key, value in audit.items() if key != "result_sha256"})

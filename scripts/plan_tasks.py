@@ -4,13 +4,154 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, Mapping
+
+from projection_bundle import (
+    projection_sha256,
+    validate_projection_bundle,
+)
 
 from plan_protocol_core import (
     GRAPH_POLICY_VERSION, PLAN_PROTOCOL_V2, PLAN_REQUIRED_HEADINGS, TASK_FIELDS,
     PlanProtocolError, canonicalize_issue_body, issue_body_sha256, sha256_json,
 )
 from plan_events import _validate_iso8601
+
+TASKS_PROJECTION_VERSION = "plan-tasks-projection/v1"
+GRAPH_POLICY_PROJECTION_VERSION = "graph-policy-projection/v1"
+_TASKS_PAYLOAD_FIELDS = frozenset(("adapter_version", "input_digest", "tasks"))
+_GRAPH_POLICY_PAYLOAD_FIELDS = frozenset(
+    ("adapter_version", "input_digest", "graph_policy")
+)
+
+
+def authority_text(authority_bytes: bytes) -> str:
+    if not isinstance(authority_bytes, bytes):
+        raise PlanProtocolError("projection authority must be immutable bytes")
+    try:
+        return authority_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PlanProtocolError("projection authority must be valid UTF-8") from exc
+
+
+def present_projection_slot(
+    payload: Mapping[str, Any], projection_version: str
+) -> dict[str, Any]:
+    value = dict(payload)
+    return {
+        "state": "present",
+        "projection_version": projection_version,
+        "payload": value,
+        "payload_digest": projection_sha256(value),
+    }
+
+
+def task_projection_adapter(
+    authority_bytes: bytes, authority_digest: str, versions: Mapping[str, str]
+) -> dict[str, Any]:
+    """Project stable tasks from the kernel's one immutable authority buffer."""
+
+    payload = {
+        "adapter_version": TASKS_PROJECTION_VERSION,
+        "input_digest": authority_digest,
+        "tasks": parse_tasks(authority_text(authority_bytes)),
+    }
+    return {
+        "authority_digest": authority_digest,
+        "versions": dict(versions),
+        "slot": present_projection_slot(payload, TASKS_PROJECTION_VERSION),
+    }
+
+
+def graph_policy_projection_adapter(*, evaluated_at: str):
+    """Return a kernel adapter with its time-dependent policy input frozen."""
+
+    def project(
+        authority_bytes: bytes,
+        authority_digest: str,
+        versions: Mapping[str, str],
+    ) -> dict[str, Any]:
+        tasks = parse_tasks(authority_text(authority_bytes))
+        payload = {
+            "adapter_version": GRAPH_POLICY_PROJECTION_VERSION,
+            "input_digest": authority_digest,
+            "graph_policy": evaluate_graph_policy(tasks, evaluated_at=evaluated_at),
+        }
+        return {
+            "authority_digest": authority_digest,
+            "versions": dict(versions),
+            "slot": present_projection_slot(payload, GRAPH_POLICY_PROJECTION_VERSION),
+        }
+
+    return project
+
+
+def projection_payload(
+    bundle: Mapping[str, Any],
+    slot_name: str,
+    *,
+    projection_version: str,
+    payload_fields: frozenset[str],
+) -> dict[str, Any]:
+    """Consume one closed, digest-bound projection payload from a prepared bundle."""
+
+    errors = validate_projection_bundle(dict(bundle))
+    if errors:
+        raise PlanProtocolError("invalid projection bundle: " + "; ".join(errors))
+    slots = bundle.get("slots")
+    slot = slots.get(slot_name) if isinstance(slots, Mapping) else None
+    if not isinstance(slot, Mapping) or slot.get("state") != "present":
+        raise PlanProtocolError(f"projection slot {slot_name!r} is not present")
+    if slot.get("projection_version") != projection_version:
+        raise PlanProtocolError(
+            f"projection slot {slot_name!r} version is unsupported"
+        )
+    payload = slot.get("payload")
+    if not isinstance(payload, dict) or set(payload) != payload_fields:
+        raise PlanProtocolError(
+            f"projection slot {slot_name!r} has unknown payload vocabulary"
+        )
+    if payload.get("adapter_version") != projection_version:
+        raise PlanProtocolError(
+            f"projection slot {slot_name!r} adapter version is unsupported"
+        )
+    authority = bundle.get("authority")
+    input_digest = authority.get("bytes_digest") if isinstance(authority, Mapping) else None
+    if payload.get("input_digest") != input_digest:
+        raise PlanProtocolError(
+            f"projection slot {slot_name!r} does not share the bundle input digest"
+        )
+    return payload
+
+
+def tasks_from_projection_bundle(
+    bundle: Mapping[str, Any], slot_name: str = "tasks"
+) -> list[dict[str, Any]]:
+    payload = projection_payload(
+        bundle,
+        slot_name,
+        projection_version=TASKS_PROJECTION_VERSION,
+        payload_fields=_TASKS_PAYLOAD_FIELDS,
+    )
+    tasks = payload["tasks"]
+    if not isinstance(tasks, list):
+        raise PlanProtocolError("task projection tasks must be an array")
+    return tasks
+
+
+def graph_policy_from_projection_bundle(
+    bundle: Mapping[str, Any], slot_name: str = "graph_policy"
+) -> dict[str, Any]:
+    payload = projection_payload(
+        bundle,
+        slot_name,
+        projection_version=GRAPH_POLICY_PROJECTION_VERSION,
+        payload_fields=_GRAPH_POLICY_PAYLOAD_FIELDS,
+    )
+    policy = payload["graph_policy"]
+    if not isinstance(policy, dict):
+        raise PlanProtocolError("graph policy projection must be an object")
+    return policy
 
 def _tasks_section(body: str) -> str:
     normalized = canonicalize_issue_body(body)

@@ -55,11 +55,14 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "progress_evidence": [],
   "open_questions": [],
   "gate_inventory": [],
+  "gate_economics": [],
   "phase_transition_judgments": [],
   "automation_decisions": [],
   "predecessor_evidence": {},
   "unresolved_hard_stops": [],
   "context_capsule_ref": {"schema_version":"context-capsule/v1","capsule_id":"","generation":0,"digest":""},
+  "projection_transaction_evidence_required": true,
+  "projection_transaction_evidence": {},
   "projection_bundle_ref": {"schema_version":"projection-bundle/v1","bundle_id":"","prepared_digest":""},
   "projection_transaction_receipt_ref": {"schema_version":"projection-transaction-receipt/v1","transaction_id":"","final_state":""},
   "phase_retrospectives": [],
@@ -216,6 +219,12 @@ legacy subprofile, selection origin, and achieved assurance. Resumption verifies
 and digests. Legacy artifacts retain original hashes and `transactional_completeness: unproven`;
 migration and rollback never rewrite prior artifacts.
 
+New runs set `projection_transaction_evidence_required: true`. Before Plan validation, orchestration
+reads the authoritative issue body once, runs the six versioned task, graph-policy, graph-draft,
+visual-disposition, Plan-audit-input, and preflight adapters, then stores the immutable bundle and
+separate transaction receipt in `projection_transaction_evidence`. Legacy manifests with the flag
+absent or false remain readable; they are not silently relabelled as converged transactions.
+
 ## Progress Control
 
 `execution_frontier` names the one next material action that can advance the run. Its state is
@@ -230,6 +239,13 @@ worker. Each `gate_inventory` entry records its name, risk, trigger, cost, and `
 gate cannot survive merely from inertia. `scripts/progress_control.py` validates this control plane
 and reports tier evidence budgets plus material-action, evidence-delta, interruption, and stall
 metrics.
+
+Each optional Heavy gate also records a local `gate-economics/v1` object in `gate_economics` with
+stable ID, applicability predicate/result, distinct failure class, expected/actual latency, cost
+proxy, finding/no-finding, remediation, raw denominator, duplicate count/rate, downstream outcome
+or `INSUFFICIENT_EVIDENCE`, and lifecycle status. Duplicate or overlapping failure classes are
+diagnostic only. A required gate remains active, and no gate may be retired without explicit
+human-review evidence. These records never configure telemetry or a network write.
 
 ## Plan Protocol v2
 

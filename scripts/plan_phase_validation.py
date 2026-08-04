@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from projection_bundle import (
-    validate_projection_bundle,
-    validate_projection_transaction_receipt,
+from plan_projection_validation import (
+    PLAN_PROJECTION_REQUIRED_SLOTS,
+    assemble_plan_projection_transaction_evidence,
+    validate_projection_transaction_evidence,
 )
 
 from plan_protocol import (
@@ -57,52 +58,6 @@ class PlanGateDependencies:
     markdown_section: Callable[..., str]
 
 
-def validate_projection_transaction_evidence(data: Any) -> list[str]:
-    """Pure optional hook for prepared-bundle transaction evidence.
-
-    T-005 owns validator adapter cutover, so absence is valid for now.  Once an
-    evidence envelope is present, however, both identities must be complete,
-    content-addressed, mutually bound, and use only supported vocabulary.
-    """
-
-    if not isinstance(data, dict):
-        return ["projection transaction evidence container must be an object"]
-    evidence = data.get("projection_transaction_evidence")
-    if evidence in (None, {}):
-        return []
-    if not isinstance(evidence, dict):
-        return ["projection_transaction_evidence must be an object"]
-    unknown = sorted(set(evidence) - {"bundle", "receipt", "required_slots"})
-    errors = [
-        "projection_transaction_evidence has unknown fields: " + ", ".join(unknown)
-    ] if unknown else []
-    required_slots = evidence.get("required_slots")
-    if required_slots is not None and not isinstance(required_slots, list):
-        errors.append("projection_transaction_evidence.required_slots must be an array")
-        required_slots = None
-    bundle = evidence.get("bundle")
-    receipt = evidence.get("receipt")
-    if bundle is None:
-        errors.append("projection_transaction_evidence.bundle is required")
-    else:
-        errors.extend(
-            f"projection_transaction_evidence.bundle: {error}"
-            for error in validate_projection_bundle(bundle, required_slots=required_slots)
-        )
-    if receipt is None:
-        errors.append("projection_transaction_evidence.receipt is required")
-    else:
-        errors.extend(
-            f"projection_transaction_evidence.receipt: {error}"
-            for error in validate_projection_transaction_receipt(
-                receipt,
-                bundle=bundle if isinstance(bundle, dict) else None,
-                required_slots=required_slots,
-            )
-        )
-    return errors
-
-
 def validate_plan_protocol_evidence(
     data: dict[str, Any],
     implementation_body: str,
@@ -111,7 +66,11 @@ def validate_plan_protocol_evidence(
     skip_remote: bool,
     deps: PlanProtocolDependencies,
 ) -> None:
-    errors.extend(validate_projection_transaction_evidence(data))
+    errors.extend(
+        validate_projection_transaction_evidence(
+            data, implementation_body.encode("utf-8")
+        )
+    )
     protocol_errors = validate_protocol_version(data)
     errors.extend(protocol_errors)
     if protocol_errors:

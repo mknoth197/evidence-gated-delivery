@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from intent_router import HARD_STOP_ACTIONS, LOW_RISK_ACTIONS, route
+from intent_router import HARD_STOP_ACTIONS, LOW_RISK_ACTIONS, resolve_assurance_invocation, route
 from validate_tier import errors_for
 
 
@@ -21,9 +21,10 @@ class IntentRouterTests(unittest.TestCase):
     def test_review_branch_and_scoped_issue_publication_need_no_new_prompt(self):
         decision = route({"external_impact": "ordinary", "hard_stops": []})
         allowed = decision["progress_corridor"]["continue_without_prompt"]
-        self.assertIn("push_review_branch", allowed)
-        self.assertIn("open_or_update_pull_request", allowed)
-        self.assertIn("publish_scoped_issue", allowed)
+        self.assertIn("publish_review_branch", allowed)
+        self.assertIn("open_pull_request", allowed)
+        self.assertIn("update_scoped_issue", allowed)
+        self.assertIn("publish_deterministic_graph", allowed)
         self.assertEqual(decision["tier"], "quick")
 
     def test_uncertain_multi_surface_work_is_balanced(self):
@@ -56,19 +57,19 @@ class IntentRouterTests(unittest.TestCase):
 
     def test_balanced_receipt_requires_contract_and_two_sources(self):
         routing = route({"scope": "medium", "ambiguity": "medium", "reversibility": "low", "data_risk": "low", "novelty": "medium", "external_impact": "ordinary", "hard_stops": []})
-        data = {"delivery_tier": "balanced", "intent_routing": routing, "tier_evidence": {"sources": ["source"], "checks": ["test"]}}
+        data = {"mode": "research", "delivery_tier": "balanced", "assurance": resolve_assurance_invocation([], inferred_mode="research", legacy_tier="balanced"), "intent_routing": routing, "tier_evidence": {"sources": ["source"], "checks": ["test"]}}
         errors = errors_for(data)
         self.assertTrue(any("sources" in error for error in errors))
         self.assertTrue(any("contract" in error for error in errors))
 
     def test_quick_receipt_accepts_targeted_evidence(self):
         routing = route({"hard_stops": []})
-        data = {"delivery_tier": "quick", "intent_routing": routing, "tier_evidence": {"sources": ["source"], "checks": ["test"], "external_actions": []}}
+        data = {"mode": "research", "delivery_tier": "quick", "assurance": resolve_assurance_invocation([], inferred_mode="research", legacy_tier="quick"), "intent_routing": routing, "tier_evidence": {"sources": ["source"], "checks": ["test"], "external_actions": []}}
         self.assertEqual(errors_for(data), [])
 
     def test_balanced_receipt_accepts_contract_and_current_evidence(self):
         routing = route({"scope": "medium", "ambiguity": "medium", "reversibility": "low", "data_risk": "low", "novelty": "medium", "external_impact": "ordinary", "hard_stops": []})
-        data = {"delivery_tier": "balanced", "intent_routing": routing, "tier_evidence": {"contract": "Bounded change with a targeted verification.", "sources": ["current source", "current test"], "checks": ["targeted test"], "external_actions": []}}
+        data = {"mode": "research", "delivery_tier": "balanced", "assurance": resolve_assurance_invocation([], inferred_mode="research", legacy_tier="balanced"), "intent_routing": routing, "tier_evidence": {"contract": "Bounded change with a targeted verification.", "sources": ["current source", "current test"], "checks": ["targeted test"], "external_actions": []}}
         self.assertEqual(errors_for(data), [])
 
 

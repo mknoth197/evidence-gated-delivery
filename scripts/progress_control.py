@@ -7,19 +7,55 @@ import argparse
 import json
 from typing import Any
 
+from context_capsule import SCHEMA_VERSION as CONTEXT_CAPSULE_VERSION
+from context_capsule import status as capsule_status
+from workflow_gate_validation import validate_gate_economics
+
 FRONTIER_STATES = {"ready", "delegated", "verified", "blocked", "retired"}
 RECOVERY_STATES = {"continue", "repair", "escalate", "retire"}
 EVIDENCE_BUDGETS = {"quick": {"sources": 1, "checks": 1}, "balanced": {"sources": 2, "checks": 1}, "deep": {"sources": 2, "checks": 1}}
 
 
 def context_capsule(data: dict[str, Any], charter: dict[str, Any]) -> dict[str, Any]:
-    """Give a fresh task only the current state needed to create one bounded delta."""
-    return {"goal": data.get("goal", ""), "frontier": data.get("execution_frontier", {}), "progress_corridor": data.get("intent_routing", {}).get("progress_corridor", {}), "known_evidence": data.get("progress_evidence", []), "open_questions": data.get("open_questions", []), "charter": charter}
+    """Give a fresh task bounded state plus the verified persistence reference."""
+    reference = data.get("context_capsule_ref", {})
+    locator = reference.get("locator") if isinstance(reference, dict) else None
+    verified = capsule_status(locator, reference) if locator else {
+        "status": "INVALID",
+        "errors": ["context_capsule_ref.locator is required"],
+    }
+    return {
+        "goal": data.get("goal", ""),
+        "frontier": data.get("execution_frontier", {}),
+        "progress_corridor": data.get("intent_routing", {}).get("progress_corridor", {}),
+        "known_evidence": data.get("progress_evidence", []),
+        "open_questions": data.get("open_questions", []),
+        "capsule": verified,
+        "charter": charter,
+    }
 
 
 def assess(data: dict[str, Any]) -> dict[str, Any]:
     """Return actionable control signals; repeated non-progress is a workflow failure."""
     errors: list[str] = []
+    gate_economics_diagnostics: list[str] = []
+    capsule_reference = data.get("context_capsule_ref")
+    if not isinstance(capsule_reference, dict):
+        errors.append("context_capsule_ref is required")
+    else:
+        if capsule_reference.get("schema_version") != CONTEXT_CAPSULE_VERSION:
+            errors.append("context_capsule_ref.schema_version is invalid")
+        locator = capsule_reference.get("locator")
+        if not isinstance(locator, str) or not locator:
+            errors.append("context_capsule_ref.locator is required")
+        else:
+            capsule_result = capsule_status(locator, capsule_reference)
+            if capsule_result.get("status") != "VALID":
+                errors.extend(capsule_result.get("errors", []) or [capsule_result.get("error", "context capsule is invalid")])
+    if "gate_economics" in data:
+        economics = validate_gate_economics(data.get("gate_economics"))
+        errors.extend(economics["errors"])
+        gate_economics_diagnostics = economics["diagnostics"]
     frontier = data.get("execution_frontier")
     if not isinstance(frontier, dict):
         errors.append("execution_frontier is required")
@@ -58,7 +94,7 @@ def assess(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(gate, dict) or any(not gate.get(key) for key in ("name", "risk", "trigger", "cost", "review_at")):
             errors.append("every gate needs name, risk, trigger, cost, and review_at")
     metrics = {"material_actions": sum(bool(e.get("state_changed")) for e in events if isinstance(e, dict)), "evidence_deltas": sum(bool(e.get("evidence_delta")) for e in events if isinstance(e, dict)), "user_interruptions": sum(e.get("kind") == "user_interrupt" for e in events if isinstance(e, dict)), "stalled": bool(repeats)}
-    return {"status": "VALID" if not errors and not repeats else "INVALID", "errors": errors, "stall_signatures": repeats, "evidence_budget": EVIDENCE_BUDGETS.get(data.get("delivery_tier", "deep"), EVIDENCE_BUDGETS["deep"]), "metrics": metrics}
+    return {"status": "VALID" if not errors and not repeats else "INVALID", "errors": errors, "stall_signatures": repeats, "gate_economics_diagnostics": gate_economics_diagnostics, "evidence_budget": EVIDENCE_BUDGETS.get(data.get("delivery_tier", "deep"), EVIDENCE_BUDGETS["deep"]), "metrics": metrics}
 
 
 def main() -> int:

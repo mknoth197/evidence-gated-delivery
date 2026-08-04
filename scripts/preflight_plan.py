@@ -21,6 +21,12 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from visual_applicability import validate_disposition
 from plan_protocol import PLAN_PROTOCOL_V2, lint_plan
+from plan_tasks import authority_text, present_projection_slot, projection_payload
+
+PREFLIGHT_PROJECTION_VERSION = "plan-preflight-projection/v1"
+_PREFLIGHT_PAYLOAD_FIELDS = frozenset(
+    ("adapter_version", "input_digest", "status", "errors", "plan_lint")
+)
 
 HEADINGS = (
     "Problem Statement",
@@ -34,6 +40,96 @@ HEADINGS = (
     "Mockup Accounting Matrix",
     "Cross-Reference",
 )
+
+
+def preflight_projection_adapter(
+    *,
+    visual_disposition: dict[str, object] | None = None,
+    plan_protocol_version: str = PLAN_PROTOCOL_V2,
+    user_directions: list[str] | None = None,
+    runtime_evidence: list[dict[str, object]] | None = None,
+):
+    """Project mutation-free Plan preflight evidence from the shared bytes."""
+
+    import copy
+
+    frozen_disposition = copy.deepcopy(visual_disposition)
+    frozen_directions = copy.deepcopy(user_directions)
+    frozen_runtime = copy.deepcopy(runtime_evidence)
+
+    def project(authority_bytes: bytes, authority_digest: str, versions: dict[str, str]):
+        body = authority_text(authority_bytes)
+        errors: list[str] = []
+        disposition = frozen_disposition
+        if disposition is None:
+            from visual_applicability import (
+                DOMAIN_PREFIXES,
+                build_plan_inventory,
+                evaluate_visual_applicability,
+            )
+
+            inventory, extraction_errors = build_plan_inventory(
+                body,
+                user_directions=frozen_directions,
+                runtime_evidence=frozen_runtime,
+            )
+            declared = {
+                domain: [entry["id"] for entry in entries]
+                for domain, entries in inventory.items()
+                if domain in DOMAIN_PREFIXES and isinstance(entries, list)
+            }
+            disposition = evaluate_visual_applicability(
+                inventory,
+                phase="plan",
+                authoritative_issue_body=body,
+                declared_ids=declared,
+            )
+            errors.extend(extraction_errors)
+        _mode, _inventory, visual_errors = validate_disposition(
+            disposition,
+            body,
+            phase="plan",
+            require_embedded_inventory=plan_protocol_version == PLAN_PROTOCOL_V2,
+            authoritative_user_directions=frozen_directions,
+            authoritative_runtime_evidence=frozen_runtime,
+        )
+        errors.extend(visual_errors)
+        lint_receipt = lint_plan(body) if plan_protocol_version == PLAN_PROTOCOL_V2 else None
+        if lint_receipt and lint_receipt["status"] != "PASS":
+            errors.extend(
+                f"{finding['finding_id']}: {finding['evidence']}"
+                for finding in lint_receipt["findings"]
+            )
+        errors.extend(
+            f"missing or empty top-level section: {heading}"
+            for heading in HEADINGS
+            if not section(body, heading)
+        )
+        payload = {
+            "adapter_version": PREFLIGHT_PROJECTION_VERSION,
+            "input_digest": authority_digest,
+            "status": "VALID" if not errors else "INVALID",
+            "errors": errors,
+            "plan_lint": lint_receipt,
+        }
+        return {
+            "authority_digest": authority_digest,
+            "versions": dict(versions),
+            "slot": present_projection_slot(payload, PREFLIGHT_PROJECTION_VERSION),
+        }
+
+    return project
+
+
+def preflight_from_projection_bundle(
+    bundle: dict[str, object], slot_name: str = "preflight"
+) -> dict[str, object]:
+    return projection_payload(
+        bundle,
+        slot_name,
+        projection_version=PREFLIGHT_PROJECTION_VERSION,
+        payload_fields=_PREFLIGHT_PAYLOAD_FIELDS,
+    )
 
 
 def section(body: str, heading: str) -> str:

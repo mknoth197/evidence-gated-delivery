@@ -3,10 +3,140 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Mapping
 
 from plan_protocol_core import PlanProtocolError, issue_body_sha256, sha256_json
 from plan_events import _validate_iso8601
+from plan_tasks import (
+    authority_text,
+    parse_tasks,
+    present_projection_slot,
+    projection_payload,
+)
+
+GRAPH_DRAFT_PROJECTION_VERSION = "graph-draft-projection/v1"
+GRAPH_READBACK_EVIDENCE_VERSION = "graph-readback-evidence/v1"
+_GRAPH_DRAFT_PAYLOAD_FIELDS = frozenset(
+    ("adapter_version", "input_digest", "graph_draft")
+)
+_GRAPH_READBACK_EVIDENCE_FIELDS = frozenset(
+    (
+        "schema_version",
+        "bundle_id",
+        "prepared_digest",
+        "input_digest",
+        "remote_state",
+        "remote_state_digest",
+        "reconciliation",
+    )
+)
+
+
+def graph_draft_projection_adapter(*, parent_issue_url: str, repository: str):
+    """Return a graph-draft adapter bound to one kernel authority digest."""
+
+    def project(
+        authority_bytes: bytes,
+        authority_digest: str,
+        versions: Mapping[str, str],
+    ) -> dict[str, Any]:
+        draft = freeze_graph_draft(
+            parent_issue_url,
+            repository,
+            parse_tasks(authority_text(authority_bytes)),
+        )
+        payload = {
+            "adapter_version": GRAPH_DRAFT_PROJECTION_VERSION,
+            "input_digest": authority_digest,
+            "graph_draft": draft,
+        }
+        return {
+            "authority_digest": authority_digest,
+            "versions": dict(versions),
+            "slot": present_projection_slot(payload, GRAPH_DRAFT_PROJECTION_VERSION),
+        }
+
+    return project
+
+
+def graph_draft_from_projection_bundle(
+    bundle: Mapping[str, Any], slot_name: str = "graph_draft"
+) -> dict[str, Any]:
+    payload = projection_payload(
+        bundle,
+        slot_name,
+        projection_version=GRAPH_DRAFT_PROJECTION_VERSION,
+        payload_fields=_GRAPH_DRAFT_PAYLOAD_FIELDS,
+    )
+    draft = payload["graph_draft"]
+    errors = validate_graph_draft(draft)
+    if errors:
+        raise PlanProtocolError("invalid projected graph draft: " + "; ".join(errors))
+    return draft
+
+
+def normalize_graph_readback_evidence(
+    bundle: Mapping[str, Any],
+    draft: Mapping[str, Any],
+    remote_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind later remote evidence without changing the prepared bundle identity."""
+
+    from projection_bundle import validate_projection_bundle
+
+    bundle_errors = validate_projection_bundle(dict(bundle))
+    if bundle_errors:
+        raise PlanProtocolError("invalid projection bundle: " + "; ".join(bundle_errors))
+    authority = bundle.get("authority")
+    input_digest = authority.get("bytes_digest") if isinstance(authority, Mapping) else None
+    if not isinstance(input_digest, str):
+        raise PlanProtocolError("projection bundle lacks authority digest")
+    normalized = {
+        "children": list(remote_state.get("children", [])),
+        "edges": list(remote_state.get("edges", [])),
+    }
+    reconciliation = reconcile_graph_state(dict(draft), normalized)
+    return {
+        "schema_version": GRAPH_READBACK_EVIDENCE_VERSION,
+        "bundle_id": bundle.get("bundle_id"),
+        "prepared_digest": bundle.get("prepared_digest"),
+        "input_digest": input_digest,
+        "remote_state": normalized,
+        "remote_state_digest": sha256_json(normalized),
+        "reconciliation": reconciliation,
+    }
+
+
+def validate_graph_readback_evidence(
+    evidence: Mapping[str, Any],
+    bundle: Mapping[str, Any],
+    draft: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if set(evidence) != _GRAPH_READBACK_EVIDENCE_FIELDS:
+        raise PlanProtocolError("graph read-back evidence has unknown vocabulary")
+    expected = {
+        "schema_version": GRAPH_READBACK_EVIDENCE_VERSION,
+        "bundle_id": bundle.get("bundle_id"),
+        "prepared_digest": bundle.get("prepared_digest"),
+        "input_digest": (
+            bundle.get("authority", {}).get("bytes_digest")
+            if isinstance(bundle.get("authority"), Mapping)
+            else None
+        ),
+    }
+    for field, value in expected.items():
+        if evidence.get(field) != value:
+            raise PlanProtocolError(f"graph read-back evidence {field} mismatch")
+    remote_state = evidence["remote_state"]
+    if not isinstance(remote_state, dict) or evidence.get("remote_state_digest") != sha256_json(
+        remote_state
+    ):
+        raise PlanProtocolError("projected graph read-back digest mismatch")
+    if draft is not None:
+        expected_reconciliation = reconcile_graph_state(dict(draft), remote_state)
+        if evidence.get("reconciliation") != expected_reconciliation:
+            raise PlanProtocolError("graph read-back reconciliation mismatch")
+    return dict(evidence)
 
 
 def graph_child_body_sha256(body: str) -> str:

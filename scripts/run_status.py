@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from progress_control import assess
+from context_capsule import status as capsule_status
 
 
 def main() -> int:
@@ -21,6 +22,12 @@ def main() -> int:
     judgments = data.get("phase_transition_judgments", [])
     latest = judgments[-1] if isinstance(judgments, list) and judgments else None
     progress = assess(data)
+    capsule_reference = data.get("context_capsule_ref", {})
+    capsule_locator = capsule_reference.get("locator") if isinstance(capsule_reference, dict) else None
+    capsule = capsule_status(capsule_locator, capsule_reference) if capsule_locator else {
+        "status": "INVALID",
+        "errors": ["context_capsule_ref.locator is required"],
+    }
     print(json.dumps({
         "run_id": data.get("run_id"),
         "mode": data.get("mode"),
@@ -28,6 +35,7 @@ def main() -> int:
         "intent_routing": data.get("intent_routing"),
         "execution_frontier": data.get("execution_frontier"),
         "progress_control": progress,
+        "context_capsule": capsule,
         "completed_phases": completed,
         "research_issue_url": data.get("research_issue_url"),
         "implementation_issue_url": data.get("implementation_issue_url"),

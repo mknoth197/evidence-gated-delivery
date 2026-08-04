@@ -9,6 +9,108 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 
+GATE_OUTCOME_UNKNOWN = "INSUFFICIENT_EVIDENCE"
+GATE_STATUSES = {"active", "retirement_proposed", "retired"}
+FINDING_STATUSES = {"finding", "no_finding"}
+
+
+def validate_gate_economics(
+    entries: Any, *, required_gate_ids: tuple[str, ...] = ()
+) -> dict[str, list[str]]:
+    """Validate local-only gate cost and distinct-contribution records."""
+
+    errors: list[str] = []
+    diagnostics: list[str] = []
+    if not isinstance(entries, list):
+        return {"errors": ["gate_economics must be an array"], "diagnostics": []}
+    by_id: dict[str, dict[str, Any]] = {}
+    by_failure_class: dict[str, list[str]] = {}
+    forbidden_keys = {"telemetry", "remote_endpoint", "ingestion", "network_write"}
+
+    def every_key(value: Any) -> set[str]:
+        if isinstance(value, dict):
+            return set(value) | set().union(*(every_key(item) for item in value.values()))
+        if isinstance(value, list):
+            return set().union(*(every_key(item) for item in value))
+        return set()
+
+    for index, entry in enumerate(entries):
+        label = f"gate_economics[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        leaked = sorted(forbidden_keys & every_key(entry))
+        if leaked:
+            errors.append(f"{label} contains prohibited remote-observability fields: {', '.join(leaked)}")
+        gate_id = entry.get("gate_id")
+        if not isinstance(gate_id, str) or not gate_id.strip():
+            errors.append(f"{label}.gate_id is required")
+            continue
+        if gate_id in by_id:
+            errors.append(f"duplicate gate_id {gate_id}")
+        by_id[gate_id] = entry
+        if entry.get("schema_version") != "gate-economics/v1":
+            errors.append(f"{label}.schema_version must equal gate-economics/v1")
+        for field in ("name", "applicability_predicate", "failure_class"):
+            if not isinstance(entry.get(field), str) or not entry[field].strip():
+                errors.append(f"{label}.{field} is required")
+        if not isinstance(entry.get("applicable"), bool):
+            errors.append(f"{label}.applicable must be boolean")
+        for field in ("expected_latency_ms", "actual_latency_ms"):
+            value = entry.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                errors.append(f"{label}.{field} must be a nonnegative number")
+        if not isinstance(entry.get("cost_proxy"), str) or not entry["cost_proxy"].strip():
+            errors.append(f"{label}.cost_proxy must be a string, using UNKNOWN when unavailable")
+        finding = entry.get("finding")
+        if not isinstance(finding, dict) or finding.get("status") not in FINDING_STATUSES:
+            errors.append(f"{label}.finding.status must be finding or no_finding")
+        elif not isinstance(finding.get("finding_ids"), list):
+            errors.append(f"{label}.finding.finding_ids must be an array")
+        remediation = entry.get("remediation")
+        if remediation is not None and not isinstance(remediation, str):
+            errors.append(f"{label}.remediation must be a string or null")
+        denominator = entry.get("raw_denominator")
+        duplicate_count = entry.get("duplicate_finding_count")
+        duplicate_rate = entry.get("duplicate_finding_rate")
+        if isinstance(denominator, bool) or not isinstance(denominator, int) or denominator < 0:
+            errors.append(f"{label}.raw_denominator must be a nonnegative integer")
+        if isinstance(duplicate_count, bool) or not isinstance(duplicate_count, int) or duplicate_count < 0:
+            errors.append(f"{label}.duplicate_finding_count must be a nonnegative integer")
+        if isinstance(denominator, int) and isinstance(duplicate_count, int):
+            if duplicate_count > denominator:
+                errors.append(f"{label}.duplicate_finding_count exceeds raw_denominator")
+            expected_rate = 0.0 if denominator == 0 else duplicate_count / denominator
+            if isinstance(duplicate_rate, bool) or not isinstance(duplicate_rate, (int, float)) or abs(float(duplicate_rate) - expected_rate) > 1e-9:
+                errors.append(f"{label}.duplicate_finding_rate does not match raw counts")
+        outcome = entry.get("downstream_outcome")
+        if outcome != GATE_OUTCOME_UNKNOWN and not isinstance(outcome, dict):
+            errors.append(f"{label}.downstream_outcome must be an object or INSUFFICIENT_EVIDENCE")
+        status = entry.get("status")
+        if status not in GATE_STATUSES:
+            errors.append(f"{label}.status is invalid")
+        if status == "retired":
+            review = entry.get("human_review")
+            if not isinstance(review, dict) or not all(
+                isinstance(review.get(field), str) and review[field].strip()
+                for field in ("reviewer", "decision", "reviewed_at")
+            ):
+                errors.append(f"{label} cannot retire without human_review evidence")
+        failure_class = entry.get("failure_class")
+        if isinstance(failure_class, str) and failure_class.strip():
+            by_failure_class.setdefault(failure_class, []).append(gate_id)
+    for failure_class, gate_ids in sorted(by_failure_class.items()):
+        if len(gate_ids) > 1:
+            diagnostics.append(f"overlapping failure_class {failure_class}: {', '.join(sorted(gate_ids))}")
+    for gate_id in required_gate_ids:
+        entry = by_id.get(gate_id)
+        if entry is None:
+            errors.append(f"required gate {gate_id} is missing")
+        elif entry.get("status") != "active":
+            errors.append(f"required gate {gate_id} must remain active")
+    return {"errors": errors, "diagnostics": diagnostics}
+
+
 @dataclass(frozen=True)
 class WorkflowGateDependencies:
     nonempty: Callable[..., bool]

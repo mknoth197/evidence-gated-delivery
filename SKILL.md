@@ -88,7 +88,20 @@ The validator writes a machine-readable receipt under
 
 ## Invocation
 
-The user can invoke the skill with only a goal or artifact:
+Mode and assurance are separate axes. Parse an optional assurance selector exactly once and only
+immediately after the skill name:
+
+```text
+$evidence-gated-delivery [--assurance light|heavy] <research|plan|implement|review|orchestrate> <authority-or-goal>
+```
+
+`status` rejects the selector because it creates no run. A missing value, duplicate or unknown
+selector, later-position selector, unsupported mode, or extra positional assurance token emits
+`BLOCKED_ASSURANCE_SELECTION`; never infer a downgrade. Existing phase and inferred invocations
+remain Heavy. Legacy `quick` and `balanced` map to Light while retaining their subprofile gates;
+legacy `deep` maps exactly to Heavy.
+
+The user can also invoke the skill with only a goal or artifact:
 
 ```text
 $evidence-gated-delivery Add self-service deployment health insights
@@ -119,7 +132,11 @@ Do not describe the run vaguely as "research and design guidance."
 
 ## Mode Resolution
 
-Parse an explicit first argument when present:
+First resolve the optional leading `--assurance light|heavy` selector, then parse the mode. Persist
+`mode`, `requested_assurance`, `requested_legacy_tier`, `effective_assurance`,
+`legacy_subprofile`, `selection_origin`, and `achieved_assurance` for every created run.
+
+Parse an explicit mode when present:
 
 - `research`: run Research.
 - `plan`: run Plan.
@@ -356,6 +373,12 @@ $evidence-gated-delivery plan <research-artifact-url>
 Goal: choose and freeze what should be built.
 
 1. Revalidate the research artifact against current product, source, data, and rollout mechanisms.
+   For a new transactional run, read the authoritative implementation issue body once as immutable
+   bytes and run the versioned task, graph-policy, graph-draft, visual-disposition,
+   Plan-audit-input, and preflight adapters through the projection kernel. Persist the prepared
+   bundle and separate transaction receipt in `projection_transaction_evidence`; every adapter
+   must bind the same input digest. Later graph mutations stage intent and append normalized
+   read-back evidence without rebuilding or mutating the prepared bundle.
    Before screenshots, visual briefs, or ImageGen, evaluate `visual-applicability/v1` from the
    complete scoped deliverable, effective user direction, acceptance criteria, tasks, affected
    modules, intended paths, and repository evidence. Select:

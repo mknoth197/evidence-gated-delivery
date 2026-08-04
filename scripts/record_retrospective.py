@@ -68,6 +68,10 @@ def main() -> int:
         "findings": incoming.get("findings", []),
         "remediation_actions": remediation,
         "remediation_rechecked": incoming.get("remediation_rechecked", False),
+        "gate_economics_summary": incoming.get(
+            "gate_economics_summary",
+            {"status": "INSUFFICIENT_EVIDENCE", "records": 0, "duplicate_diagnostics": []},
+        ),
     }
     manifest.setdefault("phase_retrospectives", [])
     manifest["phase_retrospectives"] = [v for v in manifest["phase_retrospectives"] if v.get("phase") != args.phase] + [entry]

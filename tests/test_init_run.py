@@ -14,9 +14,39 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import init_run
 from plan_protocol import PlanProtocolError, protocol_activation_receipt_path
+from validate_tier import errors_for
 
 
 class InitRunRecoveryTests(unittest.TestCase):
+    def test_explicit_assurance_is_persisted_separately_from_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "repo"
+            repository.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repository, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repository, check=True)
+            (repository / "README.md").write_text("test\n")
+            subprocess.run(["git", "add", "README.md"], cwd=repository, check=True)
+            subprocess.run(["git", "commit", "-qm", "test: initialize"], cwd=repository, check=True)
+            output = root / "run.json"
+            argv = ["init_run.py", "--mode", "implement", "--assurance", "light", "--goal", "Explicit Light", "--repo", str(repository), "--output", str(output)]
+            with patch.dict(os.environ, {"CODEX_HOME": str(root / "codex"), "CODEX_THREAD_ID": "019f0000-0000-7000-8000-000000000001"}), patch.object(sys, "argv", argv):
+                self.assertEqual(init_run.main(), 0)
+            manifest = json.loads(output.read_text())
+            self.assertEqual(manifest["mode"], "implement")
+            self.assertEqual(manifest["requested_assurance"], "light")
+            self.assertEqual(manifest["effective_assurance"], "light")
+            self.assertEqual(manifest["selection_origin"], "explicit_assurance")
+            self.assertEqual(manifest["delivery_tier"], "quick")
+            manifest["tier_evidence"] = {
+                "action_class": "inspect",
+                "sources": ["repository baseline"],
+                "checks": ["git rev-parse HEAD"],
+                "external_actions": [],
+            }
+            self.assertEqual(errors_for(manifest), [])
+
     def test_tier_requires_router_decision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -90,6 +120,11 @@ class InitRunRecoveryTests(unittest.TestCase):
             with patch.dict(os.environ, environment), patch.object(sys, "argv", argv):
                 self.assertEqual(init_run.main(), 0)
             manifest = json.loads(output.read_text())
+            self.assertEqual(manifest["context_capsule_ref"]["schema_version"], "context-capsule/v1")
+            self.assertEqual(manifest["context_capsule_ref"]["generation"], 1)
+            self.assertEqual(manifest["effective_assurance"], "heavy")
+            self.assertEqual(manifest["achieved_assurance"], "pending")
+            self.assertEqual(manifest["gate_economics"], [])
             self.assertEqual(manifest["run_started_at"], receipt["run_started_at"])
             self.assertEqual(
                 manifest["plan_events"][0]["event_id"],

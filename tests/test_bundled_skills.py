@@ -178,6 +178,7 @@ class BundledSkillTests(unittest.TestCase):
             "plan_events.py",
             "plan_graph.py",
             "plan_phase_validation.py",
+            "plan_projection_validation.py",
             "plan_protocol_core.py",
             "plan_tasks.py",
             "review_phase_validation.py",

@@ -17,6 +17,12 @@ from plan_protocol import (
     verify_graph_publication,
     verify_graph_authorization,
 )
+from plan_graph import (
+    graph_draft_from_projection_bundle,
+    normalize_graph_readback_evidence,
+    validate_graph_readback_evidence,
+)
+from projection_bundle import projection_sha256, validate_projection_bundle
 
 ActionRunner = Callable[[dict[str, Any]], dict[str, Any]]
 Readback = Callable[[], dict[str, Any]]
@@ -25,6 +31,79 @@ Recorder = Callable[[dict[str, Any]], None]
 LiveEvidence = Callable[[], dict[str, Any]]
 AuthorizationVerifier = Callable[[dict[str, Any], dict[str, Any]], list[str]]
 _MISSING = object()
+
+GRAPH_EXTERNAL_INTENT_VERSION = "graph-external-intent/v1"
+_GRAPH_INTENT_FIELDS = frozenset(
+    ("schema_version", "bundle_id", "prepared_digest", "intent", "external_action")
+)
+
+
+def stage_graph_external_intent(
+    bundle: dict[str, Any],
+    draft: dict[str, Any],
+    remote_state: dict[str, Any],
+    *,
+    target: str,
+) -> dict[str, Any]:
+    """Stage recoverable graph intent before any external write occurs."""
+
+    errors = validate_projection_bundle(bundle)
+    if errors:
+        raise PlanProtocolError("invalid projection bundle: " + "; ".join(errors))
+    projected_draft = graph_draft_from_projection_bundle(bundle)
+    if projected_draft != draft:
+        raise PlanProtocolError("graph draft differs from prepared projection")
+    actions = planned_actions(draft, remote_state)
+    staged_action_digest = projection_sha256(
+        {
+            "bundle_id": bundle["bundle_id"],
+            "prepared_digest": bundle["prepared_digest"],
+            "target": target,
+            "actions": actions,
+        }
+    )
+    return {
+        "schema_version": GRAPH_EXTERNAL_INTENT_VERSION,
+        "bundle_id": bundle["bundle_id"],
+        "prepared_digest": bundle["prepared_digest"],
+        "intent": {
+            "risk_classification": "ordinary_scoped_recoverable",
+            "authority_ref": bundle["bundle_id"],
+            "staged_action_digest": staged_action_digest,
+        },
+        "external_action": {
+            "target": target,
+            "started_evidence": None,
+            "mutation_receipt": None,
+            "readback_evidence": None,
+            "durable_output": None,
+            "state": "not_started",
+        },
+    }
+
+
+def validate_staged_graph_intent(
+    staged: dict[str, Any],
+    bundle: dict[str, Any],
+    draft: dict[str, Any],
+    remote_state: dict[str, Any],
+) -> list[str]:
+    if not isinstance(staged, dict) or set(staged) != _GRAPH_INTENT_FIELDS:
+        return ["staged graph intent has unknown vocabulary"]
+    errors: list[str] = []
+    for field in ("bundle_id", "prepared_digest"):
+        if staged.get(field) != bundle.get(field):
+            errors.append(f"staged graph intent {field} mismatch")
+    action = staged.get("external_action")
+    if not isinstance(action, dict) or action.get("state") != "not_started":
+        errors.append("staged graph intent must precede external action start")
+        return errors
+    expected = stage_graph_external_intent(
+        bundle, draft, remote_state, target=str(action.get("target"))
+    )
+    if staged != expected:
+        errors.append("staged graph intent digest or payload mismatch")
+    return errors
 
 
 def _recorded_at() -> str:
@@ -195,9 +274,26 @@ def execute_transaction(
     runner: ActionRunner,
     readback: Readback,
     recorder: Recorder,
+    projection_bundle: dict[str, Any] | None = None,
+    staged_intent: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Apply only authorized missing actions, stopping at the first uncertainty."""
 
+    if (projection_bundle is None) != (staged_intent is None):
+        raise PlanProtocolError(
+            "projection_bundle and staged_intent must be supplied together"
+        )
+    prepared_identity = None
+    if projection_bundle is not None and staged_intent is not None:
+        intent_errors = validate_staged_graph_intent(
+            staged_intent, projection_bundle, draft, initial_remote_state
+        )
+        if intent_errors:
+            raise PlanProtocolError("staged graph intent invalid: " + "; ".join(intent_errors))
+        prepared_identity = (
+            projection_bundle.get("bundle_id"),
+            projection_bundle.get("prepared_digest"),
+        )
     actions = planned_actions(draft, initial_remote_state)
     records: list[dict[str, Any]] = []
     current = initial_remote_state
@@ -208,8 +304,35 @@ def execute_transaction(
                 "authorization recheck failed: " + "; ".join(guard_errors)
             )
         # Reconcile immediately before every write so concurrent drift fails closed.
-        current = readback()
-        currently_allowed = planned_actions(draft, current)
+        try:
+            current = readback()
+        except BaseException as exc:
+            blocked = _blocked_record(
+                action,
+                reason="prewrite_readback_exception",
+                error=exc,
+            )
+            records.append(blocked)
+            recorder(blocked)
+            raise PlanProtocolError(
+                f"graph prewrite readback raised before mutation: {action}"
+            ) from exc
+        try:
+            currently_allowed = planned_actions(draft, current)
+        except BaseException as exc:
+            if projection_bundle is None:
+                raise
+            blocked = _blocked_record(
+                action,
+                reason="prewrite_remote_mismatch",
+                readback_state=current,
+                error=exc,
+            )
+            records.append(blocked)
+            recorder(blocked)
+            raise PlanProtocolError(
+                f"graph prewrite remote state conflicts with projection: {action}"
+            ) from exc
         if action not in currently_allowed:
             raise PlanProtocolError(
                 f"action is no longer an authorized missing subset: {action}"
@@ -257,6 +380,34 @@ def execute_transaction(
             raise PlanProtocolError(
                 f"graph mutation readback raised after successful write: {action}"
             ) from exc
+        if projection_bundle is not None:
+            try:
+                readback_evidence = normalize_graph_readback_evidence(
+                    projection_bundle, draft, current
+                )
+                validate_graph_readback_evidence(
+                    readback_evidence, projection_bundle, draft
+                )
+                if prepared_identity != (
+                    projection_bundle.get("bundle_id"),
+                    projection_bundle.get("prepared_digest"),
+                ):
+                    raise PlanProtocolError(
+                        "prepared projection identity mutated after external evidence"
+                    )
+            except BaseException as exc:
+                blocked = _blocked_record(
+                    action,
+                    reason="readback_projection_mismatch",
+                    mutation_result=result,
+                    readback_state=current,
+                    error=exc,
+                )
+                records.append(blocked)
+                recorder(blocked)
+                raise PlanProtocolError(
+                    f"graph mutation readback projection mismatch: {action}"
+                ) from exc
         try:
             remaining = planned_actions(draft, current)
         except BaseException as exc:
