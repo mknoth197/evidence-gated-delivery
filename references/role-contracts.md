@@ -99,6 +99,9 @@ Every receipt binds its collaboration-delegated parent/child trace, exact canoni
 SHA-256, stable findings, predecessor lineage when applicable, timestamps, callback SHA-256, and
 canonical receipt SHA-256. Blocker and High findings require a fresh verified recheck. Medium
 findings require a verified patch or explicit owner, rationale, and accepted/deferred disposition.
+The final audit independently classifies every task as `gated` or `none`, checks typed gate IDs
+against the frozen task prose and authorities, and returns the exact body-bound
+`DEPENDENCY-CLASSIFICATION:<sha256>:PASS` marker only when no external prerequisite is omitted.
 Only a fresh `final_remote` receipt for the exact remotely read body may satisfy Plan.
 
 ## Execution Auditor
@@ -164,7 +167,10 @@ technically accurate and safe to advance, not whether a proposed solution is aes
 
 Inputs are the frozen manifest and predecessor `VALID` receipt with SHA-256; execution-audit and
 retrospective receipts; action ledger and durable artifact read-backs; and current source, tests,
-runtime, and data evidence relevant to the successor.
+runtime, and data evidence relevant to the successor. For Plan → Implement, inputs also include
+the exact typed, live-readback `dependency-readiness/v1` receipt and its executable/deferred task sets. Missing or
+`BLOCKED` readiness is a blocking finding; `PARTIAL_ONLY` may recommend proceed only for the exact
+user-authorized task set and must preserve the deferred closure.
 
 It returns `phase`, `successor_phase`, `agent_id`, `status` (`pass` or `fail`), `recommendation`
 (`proceed` or `hold`), integer `confidence` (0–10), `technical_accuracy_score` (0–4),

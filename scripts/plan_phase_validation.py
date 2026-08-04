@@ -13,6 +13,7 @@ from plan_projection_validation import (
     assemble_plan_projection_transaction_evidence,
     validate_projection_transaction_evidence,
 )
+from dependency_readiness import validate_dependency_readiness_evidence
 
 from plan_protocol import (
     PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2, WORKFLOW_VERSION_V2,
@@ -35,6 +36,10 @@ class PlanProtocolDependencies:
     _live_graph_capabilities: Callable[..., Any]
     _remote_graph_state: Callable[..., Any]
     _remote_workflow_graph_artifacts: Callable[..., Any]
+    dependency_authority_reader: Callable[..., Any]
+    dependency_interface_reader: Callable[..., Any]
+    phase_receipt_verifier: Callable[..., Any]
+    dependency_authorization_verifier: Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -147,10 +152,25 @@ def validate_plan_protocol_evidence(
             if event_type not in event_types:
                 errors.append(f"plan_events must include {event_type}")
     try:
-        tasks = parse_tasks(implementation_body)
+        require_structured = data.get("dependency_readiness_evidence_required") is True
+        tasks = parse_tasks(
+            implementation_body, require_entry_gates=require_structured
+        )
     except PlanProtocolError as exc:
         errors.append(f"plan-protocol/v2 task grammar failed: {exc}")
         return
+    errors.extend(
+        validate_dependency_readiness_evidence(
+            data,
+            implementation_body,
+            tasks,
+            require_structured=require_structured,
+            authority_reader=deps.dependency_authority_reader,
+            interface_reader=deps.dependency_interface_reader,
+            phase_receipt_verifier=deps.phase_receipt_verifier,
+            authorization_verifier=deps.dependency_authorization_verifier,
+        )
+    )
     remote_body_sha = issue_body_sha256(implementation_body)
     disallowed_ids = set(deps.agent_ids(data.get("contestants")))
     disallowed_ids |= set(deps.agent_ids(data.get("judges")))

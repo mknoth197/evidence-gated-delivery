@@ -45,6 +45,7 @@ Final mockup SHA-256: `<64 lowercase hex characters>`
 - [ ] **T-001 — <Task title>.** Objective: <bounded outcome>. Context: <why and constraints>.
   Affected modules: `<path or module>`. Requirements: <observable behavior>. Verification:
   <targeted and canonical checks>. Complete when: <handoff condition>. Owner lane: <lane>.
+  `entry_gates: []`.
   `depends_on: []`.
 
 ## Out of Scope

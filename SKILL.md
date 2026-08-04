@@ -266,6 +266,9 @@ The validator may authorize `auto_proceed` only at confidence `8..10`, technical
 higher, no unresolved high or critical findings, no hard stop, and a decision bound to the judge's
 exact response hash. Confidence is judgment evidence, never a substitute for the validator,
 execution audit, retrospective, repository instructions, or protected-system authority.
+For Plan → Implement, `dependency-readiness/v1` is part of the frozen judge packet. Missing or
+`BLOCKED` readiness forces `hold`; `PARTIAL_ONLY` restricts any proceed recommendation to the exact
+user-authorized executable task set and transitive deferred closure.
 
 Default `automation_policy` is autonomous with `stop_before_phases: []`. On a user request such as
 “stop before Implementation”, add `implement` to that list and report the completed predecessor
@@ -463,6 +466,13 @@ Goal: choose and freeze what should be built.
     explicitly disposition every Medium with an owner and rationale.
 14. Freeze contracts, architecture, states, bounds, privacy, rollout, subagent ownership, tests,
     out-of-scope behavior, and rollback.
+    Give every task a canonical structured `entry_gates` declaration (`[]` when none); use typed
+    `phase_receipt:<phase>:VALID` and `merged_interface:<version>` predicates. Record
+    an independent Plan-auditor-bound `dependency-classification/v1` disposition for every task,
+    including every claimed no-prerequisite task. Record
+    `dependency-readiness/v1` with live authority and artifact read-back against the exact Plan
+    body. Legacy semantic detection may only block for Plan repair. Do not publish an implementation invocation for `BLOCKED`. Permit `PARTIAL_ONLY` only
+    when the user explicitly authorizes the exact executable task set and transitive deferred set.
 15. Follow the publication transaction in [artifact-publication.md](references/artifact-publication.md):
     preflight the issue body, publish the issue, attach or durably host the final mockup only in
     `generative_mockup`, update both
@@ -519,6 +529,8 @@ Before mutation:
 3. Freeze request/response contracts, domain semantics, bounds, targeting, privacy, component
    interfaces, ownership, dependency order, and quality gates.
 4. Identify plan-versus-reality conflicts and resolve them explicitly.
+   Re-read `dependency-readiness/v1` from the current remote Plan. A prior `VALID` receipt does not
+   bypass missing readiness evidence, a blocked gate, body drift, or absent partial authorization.
 5. Present the frozen contract, worker map, stop gates, and protected external systems.
 6. With the default autonomous policy, begin internal implementation only after the validated Plan
    transition judgment authorizes `auto_proceed`. If a user stop gate is open, stop before any

@@ -139,6 +139,11 @@ Required:
   structure, and validation rubric were applied;
 - the complete plan is in a follow-up GitHub implementation issue, not `.github/specs/**`;
 - architecture, contracts, bounds, privacy, rollout, ownership, and testing frozen;
+- every task has an explicit structured `entry_gates` declaration, including `[]`, and every
+  disposition is bound to an independent `dependency-classification/v1` Plan audit; every declared
+  gate has a live-readback `dependency-readiness/v1` receipt bound to the exact Plan body;
+  `READY` proves every gate, `PARTIAL_ONLY` names the exact executable complement plus transitive
+  deferred closure and explicit user authorization, and `BLOCKED` prevents Plan exit;
 - explicit out-of-scope list present;
 - research and implementation issues cross-link each other;
 - final mockup is attached or durably linked from the implementation issue when
@@ -162,6 +167,8 @@ Before mutation, report:
 - feature or rollout gating;
 - protected external systems;
 - worker ownership and dependency graph;
+- structured dependency readiness re-read from the current remote Plan; an older `VALID` Plan receipt cannot
+  bypass a missing, blocked, or body-drifted entry-gate receipt;
 - approval and stop gates;
 - required targeted, canonical, browser, CI, and stack checks;
 - current capsule generation, prepared bundle identity, effective/achieved assurance, explicit slot

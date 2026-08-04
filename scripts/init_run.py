@@ -285,6 +285,9 @@ def main() -> int:
         "context_capsule_ref": capsule_ref,
         "projection_transaction_evidence_required": True,
         "projection_transaction_evidence": {},
+        "dependency_readiness_evidence_required": True,
+        "dependency_classification_evidence": {},
+        "dependency_readiness_evidence": {},
         "phase_retrospectives": [],
         "retrospective_baseline": {},
         "initiative_identity": {

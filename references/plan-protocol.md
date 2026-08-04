@@ -48,13 +48,28 @@ Every direct Markdown task under `## Tasks` has this shape:
 ```text
 - [ ] **T-NNN — Title.** Objective: ... Context: ... Affected modules: ...
   Requirements: ... Verification: ... Complete when: ... Owner lane: lane.
+  `entry_gates: [{"authority_url":"https://github.com/owner/repo/issues/10","gate_id":"G-001","predicates":["phase_receipt:plan:VALID"]}]`.
   `depends_on: [T-NNN, ...]`.
 ```
 
 Required fields are `Objective`, `Context`, `Affected modules`, `Requirements`, `Verification`,
-`Complete when`, `Owner lane`, and `depends_on`. IDs are unique and sequential from `T-001`.
+`Complete when`, `Owner lane`, `entry_gates`, and `depends_on`. `entry_gates` is canonical compact
+sorted-key JSON; use `[]` when the task has no external prerequisite. IDs are unique and sequential from `T-001`.
 Dependencies name existing task IDs, never self-reference, and form an acyclic graph. Dependency
 edges come only from `depends_on`; prose is not interpreted.
+
+External prerequisites are separate from graph edges and must be declared as typed `entry_gates`.
+Supported predicates are `phase_receipt:<phase>:VALID` and `merged_interface:<version>`.
+`dependency-readiness/v1` binds them to the exact Plan body, live authority body/state, content
+digests, canonical validator replay of phase receipts, authenticated parent-message partial
+authorization, and merged default-branch interface bytes. `dependency-classification/v1` binds
+every gated or `none` disposition to the independent Plan audit, so `entry_gates: []` is not
+self-authorizing. Its marker includes the current Plan-body hash and binds the authenticated audit
+callback, preventing replay after rephrasing. A semantic scan is
+only a migration blocker for old Plans; prose can never declare or satisfy readiness. A blocked root defers
+every task transitively depending on it. Full implementation requires `READY`; bounded partial
+implementation requires `PARTIAL_ONLY`, exact executable/deferred task sets, and explicit user
+authorization bound to the exact executable task IDs. Otherwise Plan exit and Implement Orientation block.
 
 Each parsed task receipt contains:
 
@@ -71,6 +86,7 @@ Each parsed task receipt contains:
   "verification": "...",
   "complete_when": "...",
   "owner_lane": "core",
+  "entry_gates": [],
   "depends_on": []
 }
 ```
@@ -99,6 +115,8 @@ contradictory immutable history fails closed even if mutable manifest fields wer
 - `kind`: `preliminary`, `remediation_recheck`, or `final_remote`;
 - exact `reviewed_body_sha256`, immutable result hash, start/completion timestamps, and evidence
   IDs;
+- the body-bound `DEPENDENCY-CLASSIFICATION:<sha256>:PASS` evidence ID after independently
+  classifying every task's typed gate IDs or `none` disposition;
 - findings with stable ID, severity (`Blocker`, `High`, `Medium`, `Low`), confidence, evidence,
   bounded question when needed, targeted patch, verification implication, downstream instruction,
   and disposition;

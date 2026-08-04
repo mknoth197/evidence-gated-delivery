@@ -60,6 +60,9 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "automation_decisions": [],
   "predecessor_evidence": {},
   "unresolved_hard_stops": [],
+  "dependency_readiness_evidence_required": true,
+  "dependency_classification_evidence": {},
+  "dependency_readiness_evidence": {},
   "context_capsule_ref": {"schema_version":"context-capsule/v1","capsule_id":"","generation":0,"digest":""},
   "projection_transaction_evidence_required": true,
   "projection_transaction_evidence": {},
@@ -158,6 +161,29 @@ Use concrete strings, not booleans:
 - Source file and line or test name.
 - Query ID, table, API result, or freshness observation.
 - GitHub issue, PR, check, or discussion URL.
+
+## Dependency readiness
+
+`dependency_readiness_evidence` uses `dependency-readiness/v1`. New manifests require every task
+to include canonical `entry_gates` JSON, including `[]` when none apply. Gates name a canonical
+authority URL and typed predicates: `phase_receipt:<phase>:VALID` or
+`merged_interface:<version>`. The validator re-reads authority body/state, receipt and manifest
+bytes, replays the canonical validator for phase receipts, and reads merged default-branch
+interface bytes. `dependency_classification_evidence` uses `dependency-classification/v1` and
+binds every task's `gated` or `none` disposition to a completed independent Plan audit marker.
+The marker includes the current Plan-body hash and the evidence binds the authenticated audit
+callback SHA-256. Partial authorization must be the full affirmative parent message, name the exact
+task IDs, use an exact-scope `only` form, and remain unretracted by later user messages.
+A semantic scan can only force Plan repair when prerequisite prose lacks a typed gate;
+prose never declares or satisfies readiness.
+
+`READY` requires every gate verified. `BLOCKED` prevents Plan exit and Implement Orientation.
+`PARTIAL_ONLY` requires explicit partial-implementation authorization and exact task sets: the
+deferred set is the blocked roots plus every transitive dependent, and the executable set is its
+complement. Its `partial_authorization` records the exact user quote, timestamp, and authorized
+task IDs; those task IDs must equal the executable set and be verified against the authenticated
+parent user message rather than another manifest field. Implement Orientation re-reads this evidence from the current remote Plan even when an
+older Plan receipt was previously `VALID`.
 
 ## Authenticated predecessor evidence
 

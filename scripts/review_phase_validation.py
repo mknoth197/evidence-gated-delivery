@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from dependency_readiness import validate_dependency_readiness_evidence
+from plan_tasks import PlanProtocolError
+
 
 @dataclass(frozen=True)
 class ReviewDependencies:
@@ -24,6 +27,49 @@ class ReviewDependencies:
     timestamp: Callable[..., Any]
     agent_ids: Callable[..., list[str]]
     github_readback: Callable[..., Any]
+    dependency_authority_reader: Callable[..., Any]
+    dependency_interface_reader: Callable[..., Any]
+    phase_receipt_verifier: Callable[..., Any]
+    dependency_authorization_verifier: Callable[..., Any]
+
+
+def validate_predecessor_dependency_readiness(
+    data: dict[str, Any],
+    predecessor_plan: dict[str, Any] | None,
+    errors: list[str],
+    skip_remote: bool,
+    *,
+    deps: ReviewDependencies,
+) -> None:
+    """Recheck Plan task readiness before any successor mutation or completion."""
+
+    if predecessor_plan is None:
+        return
+    issue_url = predecessor_plan.get("implementation_issue_url")
+    if not isinstance(issue_url, str) or not issue_url:
+        return
+    if skip_remote:
+        return
+    body, read_error = deps.github_readback(issue_url, "issue")
+    if read_error or body is None:
+        errors.append(f"dependency readiness remote Plan read-back failed: {read_error or 'missing body'}")
+        return
+    try:
+        errors.extend(
+            validate_dependency_readiness_evidence(
+                predecessor_plan,
+                body,
+                require_structured=(
+                    predecessor_plan.get("dependency_readiness_evidence_required") is True
+                ),
+                authority_reader=deps.dependency_authority_reader,
+                interface_reader=deps.dependency_interface_reader,
+                phase_receipt_verifier=deps.phase_receipt_verifier,
+                authorization_verifier=deps.dependency_authorization_verifier,
+            )
+        )
+    except PlanProtocolError as exc:
+        errors.append(f"dependency readiness task parsing failed: {exc}")
 
 
 def plan_with_successor_visual_evidence(
@@ -74,6 +120,9 @@ def add_orientation_errors(
     predecessor_plan: dict[str, Any] | None = None,
     deps: ReviewDependencies,
 ) -> None:
+    validate_predecessor_dependency_readiness(
+        data, predecessor_plan, errors, skip_remote, deps=deps
+    )
     plan_evidence = (
         plan_with_successor_visual_evidence(
             predecessor_plan, data, "implement-orientation"
@@ -213,6 +262,9 @@ def add_implement_errors(
     successor_visual_data: dict[str, Any] | None = None,
     deps: ReviewDependencies,
 ) -> None:
+    validate_predecessor_dependency_readiness(
+        data, predecessor_plan, errors, skip_remote, deps=deps
+    )
     review_evidence = (
         successor_visual_data
         if visual_phase == "review" and successor_visual_data is not None
