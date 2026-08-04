@@ -9,7 +9,10 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from scripts.phase_validation_orchestrator import PhaseValidationDependencies, validate
-from scripts.predecessor_evidence import validate_predecessor_evidence
+from scripts.predecessor_evidence import (
+    _copied_evidence_errors,
+    validate_predecessor_evidence,
+)
 from scripts.review_phase_validation import plan_with_successor_visual_evidence
 
 
@@ -299,6 +302,11 @@ class PredecessorEvidenceTests(unittest.TestCase):
             "phase": "implement",
             "phase_receipt_sha256": sha256(implement_receipt_path),
         }]
+        review["quality_gates"] = [{
+            "name": "review tests",
+            "status": "passed",
+            "evidence": "fresh Review rerun",
+        }]
         deps = self._orchestrator_dependencies()
 
         errors = validate(review, "review", True, deps=deps)
@@ -308,6 +316,42 @@ class PredecessorEvidenceTests(unittest.TestCase):
         self.assertEqual(implement_call.args[0]["run_id"], "implement-run")
         self.assertEqual(
             implement_call.kwargs["predecessor_plan"]["run_id"], "plan-run"
+        )
+
+    def test_review_allows_fresh_evidence_but_rejects_exact_implement_copies(self) -> None:
+        implement = {
+            "acceptance_reviewer": {"agent_id": "implement-acceptance"},
+            "quality_gates": [{"name": "tests", "status": "passed", "evidence": "old"}],
+        }
+        review = {
+            "acceptance_reviewer": {"agent_id": "review-acceptance"},
+            "quality_gates": [{"name": "tests", "status": "passed", "evidence": "fresh"}],
+        }
+
+        self.assertEqual(_copied_evidence_errors(review, implement, "implement"), [])
+
+        review["acceptance_reviewer"] = copy.deepcopy(
+            implement["acceptance_reviewer"]
+        )
+        review["quality_gates"] = copy.deepcopy(implement["quality_gates"])
+        errors = _copied_evidence_errors(review, implement, "implement")
+
+        self.assertTrue(any("acceptance_reviewer" in error for error in errors), errors)
+        self.assertTrue(any("quality_gates" in error for error in errors), errors)
+
+        review["acceptance_reviewer"] = {
+            "agent_id": "implement-acceptance",
+            "result": "changed callback",
+        }
+        review["quality_gates"] = [{
+            "name": "tests",
+            "status": "passed",
+            "evidence": "fresh",
+        }]
+        errors = _copied_evidence_errors(review, implement, "implement")
+        self.assertTrue(
+            any("reuses the Implement acceptance reviewer agent" in error for error in errors),
+            errors,
         )
 
     def test_rejects_tampered_receipt_bytes(self) -> None:

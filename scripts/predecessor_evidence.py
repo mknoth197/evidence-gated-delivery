@@ -75,10 +75,9 @@ IMPLEMENT_EVIDENCE_FIELDS = frozenset(
     {
         "implementation_workers",
         "test_reviewer",
-        "acceptance_reviewer",
-        "quality_gates",
     }
 )
+REVIEW_REFRESHABLE_FIELDS = frozenset({"acceptance_reviewer", "quality_gates"})
 SUCCESSOR_TRANSITION_FIELDS = frozenset(
     {"phase_retrospectives", "phase_transition_judgments", "automation_decisions"}
 )
@@ -341,6 +340,25 @@ def _copied_evidence_errors(
         if _meaningful(prior_value) and successor.get(field) == prior_value:
             errors.append(
                 f"successor.{field} duplicates predecessor-only evidence; use authenticated import"
+            )
+    if phase == "implement":
+        for field in sorted(REVIEW_REFRESHABLE_FIELDS):
+            successor_value = successor.get(field)
+            if _meaningful(successor_value) and successor_value == predecessor.get(field):
+                errors.append(
+                    f"successor.{field} duplicates stale Implement evidence; record fresh Review evidence"
+                )
+        successor_acceptance = successor.get("acceptance_reviewer")
+        predecessor_acceptance = predecessor.get("acceptance_reviewer")
+        if (
+            isinstance(successor_acceptance, dict)
+            and isinstance(predecessor_acceptance, dict)
+            and _meaningful(successor_acceptance.get("agent_id"))
+            and successor_acceptance.get("agent_id")
+            == predecessor_acceptance.get("agent_id")
+        ):
+            errors.append(
+                "successor.acceptance_reviewer reuses the Implement acceptance reviewer agent; record a fresh Review reviewer"
             )
     return errors
 

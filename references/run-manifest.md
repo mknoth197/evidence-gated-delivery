@@ -189,8 +189,11 @@ receipt-to-manifest binding, preserves the original parent-thread provenance, ve
 GitHub authority body, and rejects parent substitution, cross-workstream use, stale authority,
 cycles, and predecessor-only fields copied into the successor. Gate validation uses an ephemeral
 projection of authenticated predecessor evidence; it never rewrites the predecessor or changes its
-parent ID. The successor still records fresh current-phase workers, reviewers, audit, retrospective,
-transition judgment, and automation decision under its own authenticated parent.
+parent ID. The successor still records fresh current-phase evidence under its own authenticated
+parent. Review inherits the authenticated Implement worker and Test-Coverage Reviewer receipts,
+but it must record freshly rerun Review quality gates and, when actual-path recomputation selects a
+visual mode, a fresh Review acceptance reviewer and gap disposition. Exact copies of the Implement
+acceptance reviewer or quality gates are rejected as stale.
 
 The direct predecessor receipt SHA-256 must also appear verbatim in the authenticated Phase
 Transition Judge callback. A mutable manifest field is not an authority anchor. For a transitive

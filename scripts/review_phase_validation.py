@@ -213,7 +213,12 @@ def add_implement_errors(
     successor_visual_data: dict[str, Any] | None = None,
     deps: ReviewDependencies,
 ) -> None:
-    visual_evidence = successor_visual_data or data
+    review_evidence = (
+        successor_visual_data
+        if visual_phase == "review" and successor_visual_data is not None
+        else data
+    )
+    visual_evidence = review_evidence
     plan_evidence = (
         plan_with_successor_visual_evidence(
             predecessor_plan, visual_evidence, visual_phase
@@ -264,7 +269,7 @@ def add_implement_errors(
         expected_marker="Test-Coverage Reviewer",
         deps=deps,
     )
-    disposition = data.get("visual_artifact_disposition")
+    disposition = visual_evidence.get("visual_artifact_disposition")
     visual_mode = (
         disposition.get("evidence_mode")
         if isinstance(disposition, dict)
@@ -273,11 +278,26 @@ def add_implement_errors(
     acceptance_id = None
     if visual_mode in {"runtime_capture", "generative_mockup"}:
         acceptance_id = validate_reviewer(
-            data,
-            data.get("acceptance_reviewer"),
+            review_evidence,
+            review_evidence.get("acceptance_reviewer"),
             "acceptance_reviewer",
             errors,
             deps=deps,
+        )
+    predecessor_acceptance = data.get("acceptance_reviewer")
+    predecessor_acceptance_id = (
+        predecessor_acceptance.get("agent_id", "").strip()
+        if isinstance(predecessor_acceptance, dict)
+        and deps.nonempty(predecessor_acceptance.get("agent_id"))
+        else None
+    )
+    if (
+        visual_phase == "review"
+        and acceptance_id is not None
+        and acceptance_id == predecessor_acceptance_id
+    ):
+        errors.append(
+            "Review acceptance_reviewer must be fresh from the Implement acceptance reviewer"
         )
     prior_roles = predecessor_plan or data
     all_prior_ids = set(deps.agent_ids(prior_roles.get("contestants"))) | set(
@@ -289,11 +309,11 @@ def add_implement_errors(
     if set(all_ids) & all_prior_ids:
         errors.append("implementation workers/reviewers must be fresh from tournament agents")
 
-    if visual_mode in {"runtime_capture", "generative_mockup"} and data.get(
+    if visual_mode in {"runtime_capture", "generative_mockup"} and review_evidence.get(
         "unexplained_mockup_gaps"
     ) != 0:
         errors.append("unexplained_mockup_gaps must equal 0")
-    gates = data.get("quality_gates")
+    gates = review_evidence.get("quality_gates")
     if not isinstance(gates, list) or not gates:
         errors.append("quality_gates must contain structured gate evidence")
     else:
@@ -311,7 +331,7 @@ def add_implement_errors(
         if not passed:
             errors.append("at least one quality gate must have passed")
 
-    pull_url = data.get("pull_request_url")
+    pull_url = review_evidence.get("pull_request_url")
     if not deps.pr_url(pull_url):
         errors.append("pull_request_url must be a GitHub pull request URL")
     elif not skip_remote:

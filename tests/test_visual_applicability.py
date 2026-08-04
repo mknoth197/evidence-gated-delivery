@@ -281,6 +281,48 @@ class ReplayAndTamperingTests(unittest.TestCase):
         )
         self.assertTrue(any("independently derived" in error for error in errors))
 
+    def test_review_runtime_replay_preserves_authoritative_actual_paths(self):
+        body = """# Plan
+
+`D-001` `UD-001` `AC-001` through `AC-001` `T-001` through `T-001`
+`M-001` through `M-001`
+
+## Problem Statement
+Update the backend validator workflow in `scripts/tool.py`.
+
+## Tasks
+- [ ] **T-001 — Validate workflow.** Affected modules: `scripts/tool.py`. Requirements: complete.
+
+## Acceptance Criteria
+- WHEN invoked, THE SYSTEM SHALL pass. <!-- AC-001 -->
+"""
+        directions = ["Implement the nonvisual workflow change."]
+        inventory, extraction_errors = visual.extract_scope_inventory(
+            body, user_directions=directions
+        )
+        self.assertEqual(extraction_errors, [])
+        inventory["actual_paths"] = [
+            entry("P-001", "backend", path="scripts/tool.py")
+        ]
+        receipt = evaluate(inventory, phase="review", body=body)
+
+        mode, validated_inventory, errors = visual.validate_disposition(
+            receipt,
+            body,
+            phase="review",
+            authoritative_paths=["scripts/tool.py"],
+            require_embedded_inventory=True,
+            authoritative_user_directions=directions,
+            authoritative_runtime_evidence=[],
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(mode, "none")
+        self.assertEqual(
+            [path["path"] for path in validated_inventory["actual_paths"]],
+            ["scripts/tool.py"],
+        )
+
     def test_scope_hash_tampering_is_rejected(self):
         inventory = base_inventory()
         receipt = evaluate(inventory)
