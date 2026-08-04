@@ -52,6 +52,7 @@ def transition_judge_excluded_ids(
     data: dict[str, Any],
     current_judgment: dict[str, Any],
     *,
+    prior_role_data: dict[str, Any] | None = None,
     deps: WorkflowGateDependencies,
 ) -> set[str]:
     def every_declared_id(entries: Any) -> set[str]:
@@ -61,27 +62,25 @@ def transition_judge_excluded_ids(
             if isinstance(entry, dict) and deps.nonempty(entry.get("agent_id"))
         }
 
-    excluded = every_declared_id(data.get("contestants"))
-    excluded |= every_declared_id(data.get("judges"))
-    excluded |= every_declared_id(data.get("implementation_workers"))
-    excluded |= every_declared_id(data.get("trace_audits"))
-    excluded |= every_declared_id(data.get("plan_audits"))
-    for label in ("test_reviewer", "acceptance_reviewer"):
-        entry = data.get(label)
-        if isinstance(entry, dict) and deps.nonempty(entry.get("agent_id")):
-            excluded.add(entry["agent_id"].strip())
-    excluded |= {
-        entry["agent_id"].strip()
-        for entry in data.get("phase_retrospectives", [])
-        if isinstance(entry, dict) and deps.nonempty(entry.get("agent_id"))
-    }
-    excluded |= {
-        entry["agent_id"].strip()
-        for entry in data.get("phase_transition_judgments", [])
-        if isinstance(entry, dict)
-        and entry is not current_judgment
-        and deps.nonempty(entry.get("agent_id"))
-    }
+    role_sources = (data, prior_role_data) if prior_role_data is not None else (data,)
+    excluded: set[str] = set()
+    for source in role_sources:
+        for field in (
+            "contestants", "judges", "implementation_workers", "trace_audits",
+            "plan_audits", "phase_retrospectives",
+        ):
+            excluded |= every_declared_id(source.get(field))
+        for label in ("test_reviewer", "acceptance_reviewer"):
+            entry = source.get(label)
+            if isinstance(entry, dict) and deps.nonempty(entry.get("agent_id")):
+                excluded.add(entry["agent_id"].strip())
+        excluded |= {
+            entry["agent_id"].strip()
+            for entry in source.get("phase_transition_judgments", [])
+            if isinstance(entry, dict)
+            and entry is not current_judgment
+            and deps.nonempty(entry.get("agent_id"))
+        }
     return excluded
 
 
@@ -90,6 +89,8 @@ def validate_transition_gate(
     target_phase: str,
     errors: list[str],
     *,
+    predecessor_binding: dict[str, Any] | None = None,
+    prior_role_data: dict[str, Any] | None = None,
     deps: WorkflowGateDependencies,
 ) -> None:
     """Authorize a successor only after an independent, evidence-bound technical judgment."""
@@ -153,7 +154,9 @@ def validate_transition_gate(
         errors.append(f"{predecessor} transition judgment blocking_findings must be an array")
     elif any(isinstance(finding, dict) and finding.get("severity") in {"high", "critical"} for finding in findings):
         errors.append(f"{predecessor} transition judgment has unresolved high or critical findings")
-    binding = data.get("phase_receipt_bindings", {}).get(predecessor) if isinstance(data.get("phase_receipt_bindings"), dict) else None
+    binding = predecessor_binding
+    if binding is None:
+        binding = data.get("phase_receipt_bindings", {}).get(predecessor) if isinstance(data.get("phase_receipt_bindings"), dict) else None
     if not isinstance(binding, dict) or judgment.get("phase_receipt_sha256") != binding.get("receipt_sha256"):
         errors.append(f"{predecessor} transition judgment must bind the predecessor VALID receipt SHA-256")
     else:
@@ -170,6 +173,11 @@ def validate_transition_gate(
             errors.append(f"{predecessor} transition judge session verification failed: {session_error}")
         else:
             assert evidence is not None
+            bound_receipt_sha = binding.get("receipt_sha256")
+            if not isinstance(bound_receipt_sha, str) or bound_receipt_sha not in evidence["final_message"]:
+                errors.append(
+                    f"{predecessor} transition judge callback does not name the bound predecessor receipt SHA-256"
+                )
             session_meta = evidence["session_meta"]
             subagent = session_meta.get("source", {}).get("subagent", {}).get("thread_spawn", {})
             expected_marker = f"phase transition judge: {predecessor} -> {target_phase}"
@@ -190,7 +198,9 @@ def validate_transition_gate(
                 errors.append(f"{predecessor} transition judge result SHA-256 does not match its session")
             if deps.timestamp(judgment.get("completed_at")) != deps.timestamp(evidence.get("completed_at")):
                 errors.append(f"{predecessor} transition judge completed_at does not match its session")
-    excluded_ids = transition_judge_excluded_ids(data, judgment, deps=deps)
+    excluded_ids = transition_judge_excluded_ids(
+        data, judgment, prior_role_data=prior_role_data, deps=deps
+    )
     judgment_agent_id = (
         judgment["agent_id"].strip()
         if deps.nonempty(judgment.get("agent_id"))
@@ -226,6 +236,8 @@ def validate_retrospective_gate(
     phase: str,
     errors: list[str],
     *,
+    predecessor_data: dict[str, Any] | None = None,
+    predecessor_binding: dict[str, Any] | None = None,
     deps: WorkflowGateDependencies,
 ) -> None:
     """Require fixed-rubric learning before a later phase is accepted."""
@@ -241,11 +253,34 @@ def validate_retrospective_gate(
         if required_by_phase[phase]:
             errors.append("phase_retrospectives must be an array")
         return
-    by_phase = {entry.get("phase"): entry for entry in entries if isinstance(entry, dict)}
-    bindings = data.get("phase_receipt_bindings")
-    if required_by_phase[phase] and not isinstance(bindings, dict):
+    predecessor_entries = (
+        predecessor_data.get("phase_retrospectives", [])
+        if isinstance(predecessor_data, dict)
+        else []
+    )
+    by_phase = {
+        entry.get("phase"): entry
+        for entry in [*predecessor_entries, *entries]
+        if isinstance(entry, dict)
+    }
+    bindings: dict[str, Any] = {}
+    bindings_declared = False
+    if isinstance(predecessor_data, dict) and isinstance(
+        predecessor_data.get("phase_receipt_bindings"), dict
+    ):
+        bindings_declared = True
+        bindings.update(predecessor_data["phase_receipt_bindings"])
+    if isinstance(data.get("phase_receipt_bindings"), dict):
+        bindings_declared = True
+        bindings.update(data["phase_receipt_bindings"])
+    imported_phase = None
+    if isinstance(predecessor_binding, dict):
+        imported_phase = predecessor_binding.get("phase")
+        if isinstance(imported_phase, str):
+            bindings_declared = True
+            bindings[imported_phase] = predecessor_binding
+    if required_by_phase[phase] and not bindings_declared:
         errors.append("phase_receipt_bindings must bind every predecessor to its first VALID receipt")
-        bindings = {}
     for predecessor in required_by_phase[phase]:
         binding = bindings.get(predecessor)
         if not isinstance(binding, dict):
@@ -253,9 +288,22 @@ def validate_retrospective_gate(
         else:
             receipt_path = Path(str(binding.get("receipt_path", ""))).expanduser()
             validated_at = deps.timestamp(binding.get("validated_at"))
-            completed_at = deps.timestamp(
-                data.get("phase_timeline", {}).get(f"{predecessor}_completed_at")
-            )
+            if predecessor == imported_phase:
+                completed_at = validated_at
+                explicit_completed_at = deps.timestamp(
+                    data.get("phase_timeline", {}).get(f"{predecessor}_completed_at")
+                )
+                if explicit_completed_at is not None and explicit_completed_at != validated_at:
+                    errors.append(
+                        f"phase_timeline.{predecessor}_completed_at conflicts with imported predecessor receipt"
+                    )
+            else:
+                timeline_source = predecessor_data if isinstance(predecessor_data, dict) else data
+                completed_at = deps.timestamp(
+                    timeline_source.get("phase_timeline", {}).get(
+                        f"{predecessor}_completed_at"
+                    )
+                )
             if binding.get("status") != "VALID":
                 errors.append(f"{predecessor} phase receipt binding must have VALID status")
             if validated_at is None or completed_at != validated_at:

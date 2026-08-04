@@ -233,6 +233,15 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                 expected,
             )
         )
+        self.assertTrue(
+            validator.persisted_delegation_role_matches(
+                {
+                    "task_name": "phase_transition_judge_plan_to_implement_2",
+                    "message": "gAAAAABencrypted",
+                },
+                expected,
+            )
+        )
         self.assertFalse(
             validator.persisted_delegation_role_matches(
                 {
@@ -242,6 +251,18 @@ class CollaborationAuditIntegrationTests(unittest.TestCase):
                 expected,
             )
         )
+        for invalid in (
+            "phase_transition_judge_plan_to_implement_0",
+            "phase_transition_judge_plan_to_implement_recheck",
+            "phase_transition_judge_implement_to_review_2",
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(
+                    validator.persisted_delegation_role_matches(
+                        {"task_name": invalid, "message": "gAAAAABencrypted"},
+                        expected,
+                    )
+                )
 
     def reviewer(self) -> dict[str, object]:
         return {

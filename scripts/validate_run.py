@@ -28,6 +28,8 @@ import collaboration_receipts
 import provider_receipts
 import github_graph_adapter
 import plan_phase_validation
+import phase_validation_orchestrator
+import successor_visual_validation
 import trace_validation
 import workflow_gate_validation
 import review_phase_validation
@@ -145,6 +147,7 @@ def _plan_gate_dependencies() -> plan_phase_validation.PlanGateDependencies:
 def _review_dependencies() -> review_phase_validation.ReviewDependencies:
     return review_phase_validation.ReviewDependencies(
         add_plan_errors=add_plan_errors,
+        validate_successor_visual_evidence=lambda *args: successor_visual_validation.validate(*args, deps=_plan_gate_dependencies()),
         nonempty=nonempty,
         pr_url=pr_url,
         github_pr_oids=github_pr_oids,
@@ -193,7 +196,14 @@ def timestamp(value: Any) -> datetime | None:
     return parsed
 
 
-def validate_timeline(data: dict[str, Any], phase: str, errors: list[str]) -> None:
+def validate_timeline(
+    data: dict[str, Any],
+    phase: str,
+    errors: list[str],
+    *,
+    predecessor_data: dict[str, Any] | None = None,
+    predecessor_binding: dict[str, Any] | None = None,
+) -> None:
     started = timestamp(data.get("run_started_at"))
     timeline = data.get("phase_timeline")
     if started is None:
@@ -209,7 +219,12 @@ def validate_timeline(data: dict[str, Any], phase: str, errors: list[str]) -> No
         required += ["implement_completed_at"]
     if phase == "review":
         required += ["review_completed_at"]
-    values = {field: timestamp(timeline.get(field)) for field in required}
+    effective_timeline, projection_errors = phase_validation_orchestrator.effective_timeline(
+        timeline, predecessor_data, predecessor_binding,
+        nonempty=nonempty, timestamp=timestamp,
+    )
+    errors.extend(projection_errors)
+    values = {field: timestamp(effective_timeline.get(field)) for field in required}
     for field, value in values.items():
         if value is None:
             errors.append(f"phase_timeline.{field} must be an ISO-8601 timestamp")
@@ -431,10 +446,10 @@ def spec_hashes(root: Path) -> dict[str, str]:
     }
 
 
-def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str]) -> None:
+def validate_trace_audit(data: dict[str, Any], phase: str, errors: list[str], *,
+                         prior_role_data: dict[str, Any] | None = None) -> None:
     trace_validation.validate_trace_audit(
-        data, phase, errors, deps=_trace_dependencies()
-    )
+        data, phase, errors, prior_role_data=prior_role_data, deps=_trace_dependencies())
 
 
 def github_readback(url: str, kind: str) -> tuple[str | None, str | None]:
@@ -826,9 +841,19 @@ def add_plan_errors(
     )
 
 
-def add_orientation_errors(data: dict[str, Any], errors: list[str], skip_remote: bool) -> None:
+def add_orientation_errors(
+    data: dict[str, Any],
+    errors: list[str],
+    skip_remote: bool,
+    *,
+    predecessor_plan: dict[str, Any] | None = None,
+) -> None:
     review_phase_validation.add_orientation_errors(
-        data, errors, skip_remote, deps=_review_dependencies()
+        data,
+        errors,
+        skip_remote,
+        predecessor_plan=predecessor_plan,
+        deps=_review_dependencies(),
     )
 
 
@@ -853,9 +878,13 @@ def validate_reviewer(
 def add_implement_errors(
     data: dict[str, Any], errors: list[str], skip_remote: bool,
     visual_phase: str = "implement", review_paths: list[str] | None = None,
+    *, predecessor_plan: dict[str, Any] | None = None,
+    successor_visual_data: dict[str, Any] | None = None,
 ) -> None:
     review_phase_validation.add_implement_errors(
         data, errors, skip_remote, visual_phase, review_paths,
+        predecessor_plan=predecessor_plan,
+        successor_visual_data=successor_visual_data,
         deps=_review_dependencies(),
     )
 
@@ -867,75 +896,61 @@ def add_handoff_error(data: dict[str, Any], phase: str, errors: list[str]) -> No
 
 
 def transition_judge_excluded_ids(
-    data: dict[str, Any], current_judgment: dict[str, Any]
+    data: dict[str, Any], current_judgment: dict[str, Any],
+    *, prior_role_data: dict[str, Any] | None = None,
 ) -> set[str]:
     return workflow_gate_validation.transition_judge_excluded_ids(
-        data, current_judgment, deps=_workflow_gate_dependencies()
+        data,
+        current_judgment,
+        prior_role_data=prior_role_data,
+        deps=_workflow_gate_dependencies(),
     )
 
 
-def validate_transition_gate(data: dict[str, Any], target_phase: str, errors: list[str]) -> None:
+def validate_transition_gate(
+    data: dict[str, Any],
+    target_phase: str,
+    errors: list[str],
+    *,
+    predecessor_binding: dict[str, Any] | None = None,
+    prior_role_data: dict[str, Any] | None = None,
+) -> None:
     workflow_gate_validation.validate_transition_gate(
-        data, target_phase, errors, deps=_workflow_gate_dependencies()
+        data,
+        target_phase,
+        errors,
+        predecessor_binding=predecessor_binding,
+        prior_role_data=prior_role_data,
+        deps=_workflow_gate_dependencies(),
     )
 
 
-def validate_retrospective_gate(data: dict[str, Any], phase: str, errors: list[str]) -> None:
+def validate_retrospective_gate(
+    data: dict[str, Any],
+    phase: str,
+    errors: list[str],
+    *,
+    predecessor_data: dict[str, Any] | None = None,
+    predecessor_binding: dict[str, Any] | None = None,
+) -> None:
     workflow_gate_validation.validate_retrospective_gate(
-        data, phase, errors, deps=_workflow_gate_dependencies()
+        data,
+        phase,
+        errors,
+        predecessor_data=predecessor_data,
+        predecessor_binding=predecessor_binding,
+        deps=_workflow_gate_dependencies(),
     )
 
 
 def validate(data: dict[str, Any], phase: str, skip_remote: bool) -> list[str]:
-    errors: list[str] = []
-    for field in (
-        "run_id",
-        "parent_thread_id",
-        "mode",
-        "goal",
-        "selected_mode_reason",
-        "workflow_version",
-    ):
-        if not nonempty(data.get(field)):
-            errors.append(f"{field} is required")
-    if data.get("mode") not in MODE_BY_PHASE[phase]:
-        errors.append(f"mode {data.get('mode')!r} cannot validate phase {phase}")
-    validate_timeline(data, phase, errors)
-    if not isinstance(data.get("phase_timeline"), dict):
-        return errors
-    validate_trace_audit(data, phase, errors)
-
-    if phase == "research":
-        add_research_errors(data, errors, skip_remote)
-    elif phase == "plan":
-        add_plan_errors(data, errors, skip_remote)
-    elif phase == "orchestrate-preapproval":
-        add_orientation_errors(data, errors, skip_remote)
-    elif phase == "implement":
-        add_implement_errors(data, errors, skip_remote)
-    elif phase == "review":
-        review_paths = review_changed_paths(data, errors)
-        add_implement_errors(
-            data,
-            errors,
-            skip_remote,
-            visual_phase="review",
-            review_paths=review_paths,
-        )
-        if data.get("review_dispositions_recorded") is not True:
-            errors.append("review_dispositions_recorded must be true")
-        if data.get("remote_checks_reported") is not True:
-            errors.append("remote_checks_reported must be true")
-
-    validate_retrospective_gate(data, phase, errors)
-    if phase == "plan":
-        validate_transition_gate(data, "plan", errors)
-    elif phase in {"orchestrate-preapproval", "implement"}:
-        validate_transition_gate(data, "implement", errors)
-    elif phase == "review":
-        validate_transition_gate(data, "review", errors)
-    add_handoff_error(data, phase, errors)
-    return errors
+    deps = phase_validation_orchestrator.PhaseValidationDependencies(
+        nonempty, github_readback, validate_timeline, validate_trace_audit,
+        add_research_errors, add_plan_errors, add_orientation_errors,
+        add_implement_errors, review_changed_paths, validate_retrospective_gate,
+        validate_transition_gate, add_handoff_error, MODE_BY_PHASE,
+    )
+    return phase_validation_orchestrator.validate(data, phase, skip_remote, deps=deps)
 
 
 def main() -> int:

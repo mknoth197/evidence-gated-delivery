@@ -85,6 +85,35 @@ class TimelineValidationTests(unittest.TestCase):
             errors,
         )
 
+    def test_phase_isolated_implement_derives_predecessor_timeline(self):
+        errors: list[str] = []
+        validator.validate_timeline(
+            {
+                "run_started_at": "2026-07-29T14:00:00Z",
+                "phase_timeline": {
+                    "research_started_at": "",
+                    "research_completed_at": "",
+                    "plan_started_at": "",
+                    "plan_completed_at": "",
+                    "implement_completed_at": "2026-07-29T15:00:00Z",
+                },
+            },
+            "implement",
+            errors,
+            predecessor_data={
+                "phase_timeline": {
+                    "research_started_at": "2026-07-29T10:00:00Z",
+                    "research_completed_at": "2026-07-29T11:00:00Z",
+                    "plan_started_at": "2026-07-29T12:00:00Z",
+                }
+            },
+            predecessor_binding={
+                "phase": "plan",
+                "validated_at": "2026-07-29T13:00:00Z",
+            },
+        )
+        self.assertEqual(errors, [])
+
 
 class PublicationTests(unittest.TestCase):
     def transition_data(self, confidence=8, stops=None, findings=None):
@@ -128,17 +157,67 @@ class PublicationTests(unittest.TestCase):
         errors: list[str] = []
         data = self.transition_data()
         data["parent_thread_id"] = "parent-thread"
+        receipt_sha = data["phase_receipt_bindings"]["research"]["receipt_sha256"]
+        callback = f"transition result {receipt_sha}"
         evidence = {
             "prompt": "Phase transition judge: research -> plan",
-            "final_message": "transition result",
+            "final_message": callback,
             "completed_at": "2026-07-25T12:00:00Z",
             "session_meta": {"thread_source": "subagent", "source": {"subagent": {"thread_spawn": {"depth": 1, "parent_thread_id": "parent-thread"}}}},
         }
-        data["phase_transition_judgments"][0]["result_sha256"] = hashlib.sha256(b"transition result").hexdigest()
+        data["phase_transition_judgments"][0]["result_sha256"] = hashlib.sha256(callback.encode()).hexdigest()
         data["automation_decisions"][0]["judge_receipt_sha256"] = data["phase_transition_judgments"][0]["result_sha256"]
         with patch.object(validator, "agent_session_evidence", return_value=(evidence, None)):
             validator.validate_transition_gate(data, "plan", errors)
         self.assertEqual(errors, [])
+
+    def test_transition_judge_accepts_imported_predecessor_binding(self):
+        errors: list[str] = []
+        data = self.transition_data()
+        imported = data.pop("phase_receipt_bindings")["research"]
+        data["parent_thread_id"] = "parent-thread"
+        callback = f"transition result {imported['receipt_sha256']}"
+        evidence = {
+            "prompt": "Phase transition judge: research -> plan",
+            "final_message": callback,
+            "completed_at": "2026-07-25T12:00:00Z",
+            "session_meta": {"thread_source": "subagent", "source": {"subagent": {"thread_spawn": {"depth": 1, "parent_thread_id": "parent-thread"}}}},
+        }
+        result_sha = hashlib.sha256(callback.encode()).hexdigest()
+        data["phase_transition_judgments"][0]["result_sha256"] = result_sha
+        data["automation_decisions"][0]["judge_receipt_sha256"] = result_sha
+        with patch.object(validator, "agent_session_evidence", return_value=(evidence, None)):
+            validator.validate_transition_gate(
+                data,
+                "plan",
+                errors,
+                predecessor_binding=imported,
+            )
+        self.assertEqual(errors, [])
+
+    def test_transition_judge_rejects_rehashed_binding_not_named_by_callback(self):
+        errors: list[str] = []
+        data = self.transition_data()
+        data["parent_thread_id"] = "parent-thread"
+        original_sha = data["phase_receipt_bindings"]["research"]["receipt_sha256"]
+        callback = f"transition result {original_sha}"
+        result_sha = hashlib.sha256(callback.encode()).hexdigest()
+        replacement_sha = "c" * 64
+        data["phase_receipt_bindings"]["research"]["receipt_sha256"] = replacement_sha
+        data["phase_transition_judgments"][0].update(
+            phase_receipt_sha256=replacement_sha,
+            result_sha256=result_sha,
+        )
+        data["automation_decisions"][0]["judge_receipt_sha256"] = result_sha
+        evidence = {
+            "prompt": "Phase transition judge: research -> plan",
+            "final_message": callback,
+            "completed_at": "2026-07-25T12:00:00Z",
+            "session_meta": {"thread_source": "subagent", "source": {"subagent": {"thread_spawn": {"depth": 1, "parent_thread_id": "parent-thread"}}}},
+        }
+        with patch.object(validator, "agent_session_evidence", return_value=(evidence, None)):
+            validator.validate_transition_gate(data, "plan", errors)
+        self.assertTrue(any("callback does not name" in error for error in errors), errors)
 
     def test_transition_judge_rejects_below_threshold_and_high_finding(self):
         errors: list[str] = []
@@ -247,9 +326,90 @@ class PublicationTests(unittest.TestCase):
         )
         self.assertTrue(any("phase_receipt_bindings" in error for error in errors))
 
+    def test_retrospective_gate_projects_imported_plan_and_research(self):
+        scorecard = {key: 4 for key in validator.RETROSPECTIVE_RUBRIC}
+        evidence = {key: ["verified artifact"] for key in validator.RETROSPECTIVE_RUBRIC}
+        entry = lambda phase: {
+            "phase": phase, "agent_id": f"{phase}-retrospective", "status": "completed",
+            "scorecard": scorecard, "evidence": evidence, "total": 100,
+            "degradation_detected": False, "remediation_actions": [],
+            "remediation_rechecked": False,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bindings = {}
+            for phase, validated_at in (
+                ("research", "2026-07-23T12:30:00Z"),
+                ("plan", "2026-07-23T13:30:00Z"),
+            ):
+                path = root / f"{phase}.json"
+                path.write_text(json.dumps({
+                    "status": "VALID", "phase": phase, "validated_at": validated_at,
+                }))
+                bindings[phase] = {
+                    "phase": phase, "status": "VALID", "validated_at": validated_at,
+                    "receipt_path": str(path),
+                    "receipt_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            predecessor = {
+                "phase_timeline": {"research_completed_at": bindings["research"]["validated_at"]},
+                "phase_receipt_bindings": {"research": bindings["research"]},
+                "phase_retrospectives": [entry("research")],
+            }
+            current = {
+                "phase_timeline": {"plan_completed_at": ""},
+                "phase_retrospectives": [entry("plan")],
+            }
+            errors: list[str] = []
+            validator.validate_retrospective_gate(
+                current, "implement", errors,
+                predecessor_data=predecessor,
+                predecessor_binding=bindings["plan"],
+            )
+            self.assertEqual(errors, [])
+
+            current["phase_timeline"]["plan_completed_at"] = "2026-07-23T13:31:00Z"
+            errors = []
+            validator.validate_retrospective_gate(
+                current, "implement", errors,
+                predecessor_data=predecessor,
+                predecessor_binding=bindings["plan"],
+            )
+            self.assertTrue(any("conflicts with imported" in error for error in errors), errors)
+
 
 class AuditorAuthenticationTests(unittest.TestCase):
     parent_thread_id = "019f0000-0000-7000-8000-000000000001"
+
+    def test_trace_auditor_cannot_reuse_imported_role(self):
+        agent_id = "019f0000-0000-7000-8000-000000000099"
+        errors: list[str] = []
+        validator.validate_trace_audit(
+            {
+                "parent_thread_id": self.parent_thread_id,
+                "run_started_at": "2026-07-23T12:00:00Z",
+                "phase_timeline": {"implement_completed_at": "2026-07-23T13:00:00Z"},
+                "trace_audits": [{
+                    "phase": "implement",
+                    "agent_id": agent_id,
+                    "status": "completed",
+                    "verdict": "PASS",
+                    "result": "PASS E1",
+                    "result_sha256": hashlib.sha256(b"PASS E1").hexdigest(),
+                    "verified_event_ids": ["E1"],
+                }],
+            },
+            "implement",
+            errors,
+            prior_role_data={
+                "implementation_workers": [{
+                    "agent_id": agent_id,
+                    "status": "completed",
+                    "result": "prior work",
+                }]
+            },
+        )
+        self.assertTrue(any("fresh and unique" in error for error in errors), errors)
 
     def write_session(self, root: Path, agent_id: str, prompt: str, result: str):
         session_dir = root / "sessions" / "2026" / "07" / "23"

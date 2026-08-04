@@ -189,8 +189,15 @@ def main() -> int:
         },
         "phase_transition_judgments": [],
         "automation_decisions": [],
+        "predecessor_evidence": {},
         "phase_retrospectives": [],
         "retrospective_baseline": {},
+        "initiative_identity": {
+            "name": "",
+            "slug": "",
+            "research_issue_url": "",
+            "implementation_issue_url": "",
+        },
         "trace_audits": [],
         "research_issue_url": "",
         "research_evidence": {

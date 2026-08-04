@@ -452,6 +452,10 @@ def validate_disposition(
                     "text and runtime evidence"
                 )
     if authoritative_runtime_evidence is not None and not authoritative_errors:
+        if phase == "review" and isinstance(inventory.get("actual_paths"), list):
+            authoritative_inventory["actual_paths"] = copy.deepcopy(
+                inventory["actual_paths"]
+            )
         inventory = authoritative_inventory
         declared_ids = {
             domain: [

@@ -57,6 +57,7 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "gate_inventory": [],
   "phase_transition_judgments": [],
   "automation_decisions": [],
+  "predecessor_evidence": {},
   "unresolved_hard_stops": [],
   "context_capsule_ref": {"schema_version":"context-capsule/v1","capsule_id":"","generation":0,"digest":""},
   "projection_bundle_ref": {"schema_version":"projection-bundle/v1","bundle_id":"","prepared_digest":""},
@@ -154,6 +155,54 @@ Use concrete strings, not booleans:
 - Source file and line or test name.
 - Query ID, table, API result, or freshness observation.
 - GitHub issue, PR, check, or discussion URL.
+
+## Authenticated predecessor evidence
+
+A phase-isolated `orchestrate-preapproval`, `implement`, or `review` run may import its direct
+predecessor without copying the predecessor's work product into the new manifest:
+
+```json
+{
+  "predecessor_evidence": {
+    "phase": "plan",
+    "receipt_path": "/absolute/path/to/plan.json",
+    "receipt_sha256": "64 lowercase hex characters",
+    "manifest_path": "/absolute/path/to/original-plan-manifest.json",
+    "manifest_sha256": "64 lowercase hex characters",
+    "predecessor_parent_thread_id": "original authenticated parent UUID",
+    "workflow_version": "evidence-gated-delivery/plan-protocol-v2",
+    "plan_protocol_version": "plan-protocol/v2",
+    "validated_at": "the receipt's exact timestamp",
+    "authority": {
+      "repository": "owner/repository",
+      "initiative_slug": "stable workstream slug",
+      "research_issue_url": "https://github.com/owner/repository/issues/1",
+      "implementation_issue_url": "https://github.com/owner/repository/issues/2",
+      "implementation_issue_body_sha256": "current authoritative body SHA-256"
+    }
+  }
+}
+```
+
+The validator reads both artifacts without modifying them, checks their exact byte hashes and
+receipt-to-manifest binding, preserves the original parent-thread provenance, verifies the current
+GitHub authority body, and rejects parent substitution, cross-workstream use, stale authority,
+cycles, and predecessor-only fields copied into the successor. Gate validation uses an ephemeral
+projection of authenticated predecessor evidence; it never rewrites the predecessor or changes its
+parent ID. The successor still records fresh current-phase evidence under its own authenticated
+parent. Review inherits the authenticated Implement worker and Test-Coverage Reviewer receipts,
+but it must record freshly rerun Review quality gates and, when actual-path recomputation selects a
+visual mode, a fresh Review acceptance reviewer and gap disposition. Exact copies of the Implement
+acceptance reviewer or quality gates are rejected as stale.
+
+The direct predecessor receipt SHA-256 must also appear verbatim in the authenticated Phase
+Transition Judge callback. A mutable manifest field is not an authority anchor. For a transitive
+chain, the externally anchored direct receipt authenticates its exact manifest bytes, and those
+bytes bind the next predecessor receipt. Empty `predecessor_evidence: {}` means no import and does
+not create a recursive edge. For a nonvisual Implement continuation, the validator may derive the
+unchanged embedded Plan scope inventory while requiring a current compact disposition bound to the
+Implement phase and the still-current authoritative body; Review continues to require its own
+phase-sensitive evidence and actual-path validation.
 
 ## Capsule, projection, and assurance fields
 
