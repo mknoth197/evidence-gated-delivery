@@ -60,6 +60,22 @@ Prefer, in order:
 
 Document material disagreements instead of silently choosing one source.
 
+### Persistence, projection, and assurance contracts
+
+Every tier uses [`context-capsule/v1`](context-capsule-v1.md). Its immutable CAS generations carry
+the objective, settled decisions, source revisions, bounded evidence references, execution frontier,
+unresolved questions, and next action even when Heavy assurance is pending or blocked.
+
+Every projection transaction follows [`projection-bundle/v1`](projection-bundle-v1.md): freeze
+authority bytes once, derive typed `present`, `omitted`, `pending`, or `blocked` slots, and preserve
+the prepared digest while a separate `projection-transaction-receipt/v1` accumulates execution and
+read-back evidence. Only `sealed` or `blocked` are final transaction states.
+
+`assurance-policy/v1` keeps mode and assurance separate. Light stops at exactly six hard boundaries:
+protected external writes, destructive or irreversible actions, production/release changes,
+sensitive-data access, missing authority, and material architecture ambiguity. Unknown or
+contradictory classification fails closed. Heavy preserves every current Deep gate.
+
 ### Judge Rubric
 
 Adapt weights to the work, but score every candidate on the same dimensions:
@@ -147,7 +163,9 @@ Before mutation, report:
 - protected external systems;
 - worker ownership and dependency graph;
 - approval and stop gates;
-- required targeted, canonical, browser, CI, and stack checks.
+- required targeted, canonical, browser, CI, and stack checks;
+- current capsule generation, prepared bundle identity, effective/achieved assurance, explicit slot
+  omissions, and any blocked transaction receipt.
 
 The implementation request authorizes ordinary scoped implementation and review-branch
 publication. Wait only when the user requested a human stop or the next action crosses a named

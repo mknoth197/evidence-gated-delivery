@@ -24,6 +24,12 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
     "review_completed_at": ""
   },
   "mode": "orchestrate",
+  "requested_assurance": "heavy",
+  "requested_legacy_tier": null,
+  "effective_assurance": "heavy",
+  "legacy_subprofile": null,
+  "selection_origin": "legacy_phase_command",
+  "achieved_assurance": "pending",
   "goal": "User goal",
   "selected_mode_reason": "Natural-language request asked to run the evaluation loop",
   "repo_root": "/absolute/repository/path",
@@ -52,6 +58,9 @@ The manifest is an execution receipt, not a planning artifact. GitHub Issues rem
   "phase_transition_judgments": [],
   "automation_decisions": [],
   "unresolved_hard_stops": [],
+  "context_capsule_ref": {"schema_version":"context-capsule/v1","capsule_id":"","generation":0,"digest":""},
+  "projection_bundle_ref": {"schema_version":"projection-bundle/v1","bundle_id":"","prepared_digest":""},
+  "projection_transaction_receipt_ref": {"schema_version":"projection-transaction-receipt/v1","transaction_id":"","final_state":""},
   "phase_retrospectives": [],
   "retrospective_baseline": {},
   "initiative_identity": {
@@ -145,6 +154,18 @@ Use concrete strings, not booleans:
 - Source file and line or test name.
 - Query ID, table, API result, or freshness observation.
 - GitHub issue, PR, check, or discussion URL.
+
+## Capsule, projection, and assurance fields
+
+The normative schemas are [`context-capsule/v1`](context-capsule-v1.md) and
+[`projection-bundle/v1`](projection-bundle-v1.md). The manifest stores references, not mutable
+copies: capsule generation, immutable prepared authority, and the separate `sealed` or `blocked`
+transaction outcome. Empty refs mean "not prepared yet," not permission to omit a required object.
+
+Every created run persists mode, requested assurance or legacy tier, effective assurance, optional
+legacy subprofile, selection origin, and achieved assurance. Resumption verifies referenced bytes
+and digests. Legacy artifacts retain original hashes and `transactional_completeness: unproven`;
+migration and rollback never rewrite prior artifacts.
 
 ## Progress Control
 

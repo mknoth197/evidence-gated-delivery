@@ -13,11 +13,45 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from projection_bundle import (
+    ASSURANCE_POLICY_VERSION,
+    PROJECTION_BUNDLE_SCHEMA_VERSION,
+    PROJECTION_BUNDLE_V1,
+    PROJECTION_EXTERNAL_ACTION_STATES,
+    PROJECTION_KERNEL_VERSION,
+    PROJECTION_SCHEMA_REGISTRY,
+    PROJECTION_SLOT_OUTCOME_STATES,
+    PROJECTION_SLOT_STATES,
+    PROJECTION_TRANSACTION_BLOCKER_CODES,
+    PROJECTION_TRANSACTION_FINAL_STATES,
+    PROJECTION_TRANSACTION_RECEIPT_SCHEMA_VERSION,
+    PROJECTION_TRANSACTION_RECEIPT_V1,
+    SLOT_STATES,
+    SUPPORTED_PROJECTION_KERNEL_VERSIONS,
+    SUPPORTED_PROJECTION_SCHEMA_VERSIONS,
+    TRANSACTION_BLOCKER_CODES,
+    ProjectionBundleError,
+    build_projection_bundle,
+    build_projection_transaction_receipt,
+    bundle_id_for_digest,
+    canonical_projection_json,
+    prepared_bundle_digest,
+    projection_sha256,
+    transaction_id_for_digest,
+    transaction_receipt_digest,
+    validate_projection_bundle,
+    validate_projection_slot,
+    validate_projection_transaction_receipt,
+)
+
 PLAN_PROTOCOL_V1 = "plan-protocol/v1"
 PLAN_PROTOCOL_V2 = "plan-protocol/v2"
 WORKFLOW_VERSION_V2 = "evidence-gated-delivery/plan-protocol-v2"
 ACTIVATION_RECEIPT_V2 = "activation-receipt/v2"
 SUPPORTED_PLAN_PROTOCOLS = frozenset((PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2))
+SUPPORTED_PROTOCOL_SCHEMAS = frozenset(
+    (*SUPPORTED_PLAN_PROTOCOLS, *SUPPORTED_PROJECTION_SCHEMA_VERSIONS)
+)
 GRAPH_POLICY_VERSION = "graph-policy/v1"
 ZERO_HASH = "0" * 64
 SENSITIVE_VALUE_PATTERNS = (
