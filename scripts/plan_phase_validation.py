@@ -8,10 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from projection_bundle import (
-    validate_projection_bundle,
-    validate_projection_transaction_receipt,
+from plan_projection_validation import (
+    PLAN_PROJECTION_REQUIRED_SLOTS,
+    assemble_plan_projection_transaction_evidence,
+    validate_projection_transaction_evidence,
 )
+from dependency_readiness import validate_dependency_readiness_evidence
 
 from plan_protocol import (
     PLAN_PROTOCOL_V1, PLAN_PROTOCOL_V2, WORKFLOW_VERSION_V2,
@@ -34,6 +36,10 @@ class PlanProtocolDependencies:
     _live_graph_capabilities: Callable[..., Any]
     _remote_graph_state: Callable[..., Any]
     _remote_workflow_graph_artifacts: Callable[..., Any]
+    dependency_authority_reader: Callable[..., Any]
+    dependency_interface_reader: Callable[..., Any]
+    phase_receipt_verifier: Callable[..., Any]
+    dependency_authorization_verifier: Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -57,52 +63,6 @@ class PlanGateDependencies:
     markdown_section: Callable[..., str]
 
 
-def validate_projection_transaction_evidence(data: Any) -> list[str]:
-    """Pure optional hook for prepared-bundle transaction evidence.
-
-    T-005 owns validator adapter cutover, so absence is valid for now.  Once an
-    evidence envelope is present, however, both identities must be complete,
-    content-addressed, mutually bound, and use only supported vocabulary.
-    """
-
-    if not isinstance(data, dict):
-        return ["projection transaction evidence container must be an object"]
-    evidence = data.get("projection_transaction_evidence")
-    if evidence in (None, {}):
-        return []
-    if not isinstance(evidence, dict):
-        return ["projection_transaction_evidence must be an object"]
-    unknown = sorted(set(evidence) - {"bundle", "receipt", "required_slots"})
-    errors = [
-        "projection_transaction_evidence has unknown fields: " + ", ".join(unknown)
-    ] if unknown else []
-    required_slots = evidence.get("required_slots")
-    if required_slots is not None and not isinstance(required_slots, list):
-        errors.append("projection_transaction_evidence.required_slots must be an array")
-        required_slots = None
-    bundle = evidence.get("bundle")
-    receipt = evidence.get("receipt")
-    if bundle is None:
-        errors.append("projection_transaction_evidence.bundle is required")
-    else:
-        errors.extend(
-            f"projection_transaction_evidence.bundle: {error}"
-            for error in validate_projection_bundle(bundle, required_slots=required_slots)
-        )
-    if receipt is None:
-        errors.append("projection_transaction_evidence.receipt is required")
-    else:
-        errors.extend(
-            f"projection_transaction_evidence.receipt: {error}"
-            for error in validate_projection_transaction_receipt(
-                receipt,
-                bundle=bundle if isinstance(bundle, dict) else None,
-                required_slots=required_slots,
-            )
-        )
-    return errors
-
-
 def validate_plan_protocol_evidence(
     data: dict[str, Any],
     implementation_body: str,
@@ -111,7 +71,11 @@ def validate_plan_protocol_evidence(
     skip_remote: bool,
     deps: PlanProtocolDependencies,
 ) -> None:
-    errors.extend(validate_projection_transaction_evidence(data))
+    errors.extend(
+        validate_projection_transaction_evidence(
+            data, implementation_body.encode("utf-8")
+        )
+    )
     protocol_errors = validate_protocol_version(data)
     errors.extend(protocol_errors)
     if protocol_errors:
@@ -188,10 +152,25 @@ def validate_plan_protocol_evidence(
             if event_type not in event_types:
                 errors.append(f"plan_events must include {event_type}")
     try:
-        tasks = parse_tasks(implementation_body)
+        require_structured = data.get("dependency_readiness_evidence_required") is True
+        tasks = parse_tasks(
+            implementation_body, require_entry_gates=require_structured
+        )
     except PlanProtocolError as exc:
         errors.append(f"plan-protocol/v2 task grammar failed: {exc}")
         return
+    errors.extend(
+        validate_dependency_readiness_evidence(
+            data,
+            implementation_body,
+            tasks,
+            require_structured=require_structured,
+            authority_reader=deps.dependency_authority_reader,
+            interface_reader=deps.dependency_interface_reader,
+            phase_receipt_verifier=deps.phase_receipt_verifier,
+            authorization_verifier=deps.dependency_authorization_verifier,
+        )
+    )
     remote_body_sha = issue_body_sha256(implementation_body)
     disallowed_ids = set(deps.agent_ids(data.get("contestants")))
     disallowed_ids |= set(deps.agent_ids(data.get("judges")))

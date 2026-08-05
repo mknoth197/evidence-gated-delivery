@@ -454,6 +454,90 @@ No UI.
             )
         self.assertEqual(errors, [])
 
+    def test_dependency_classification_requires_marker_on_final_remote_audit(self):
+        body = self.body.replace(
+            "Owner lane: core. `depends_on: []`.",
+            "Owner lane: core. `entry_gates: []`. `depends_on: []`.",
+        )
+        manifest = self.manifest()
+        body_sha = plan_protocol.issue_body_sha256(body)
+        tasks = plan_protocol.parse_tasks(body, require_entry_gates=True)
+        manifest["dependency_readiness_evidence_required"] = True
+        manifest["graph_policy_receipt"] = plan_protocol.evaluate_graph_policy(
+            tasks, evaluated_at="2026-07-29T12:10:00Z"
+        )
+        classifications = [
+            {"task_id": "T-001", "disposition": "none", "gate_ids": []}
+        ]
+        digest = hashlib.sha256(
+            json.dumps(
+                {
+                    "authoritative_issue_body_sha256": body_sha,
+                    "classifications": classifications,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        marker = f"DEPENDENCY-CLASSIFICATION:{digest}:PASS"
+        final_audit = dict(manifest["plan_audits"][0])
+        final_audit.update(
+            {
+                "reviewed_body_sha256": body_sha,
+                "evidence_ids": ["remote-body"],
+            }
+        )
+        preliminary = dict(final_audit)
+        preliminary.update(
+            {
+                "audit_id": "audit-preliminary",
+                "agent_id": "019f0000-0000-7000-8000-000000000096",
+                "kind": "preliminary",
+                "evidence_ids": [marker],
+            }
+        )
+        for audit in (preliminary, final_audit):
+            callback = "PASS\n" + plan_protocol.plan_audit_callback_marker(audit)
+            audit["callback_sha256"] = hashlib.sha256(callback.encode()).hexdigest()
+            audit["result_sha256"] = plan_protocol.sha256_json(audit)
+        manifest["plan_audits"] = [preliminary, final_audit]
+        manifest["dependency_classification_evidence"] = {
+            "policy_version": "dependency-classification/v1",
+            "authoritative_issue_body_sha256": body_sha,
+            "classifications": classifications,
+            "audit_agent_id": preliminary["agent_id"],
+            "audit_callback_sha256": preliminary["callback_sha256"],
+            "audit_marker": marker,
+        }
+
+        def authenticated_evidence(_data, audit):
+            callback = "PASS\n" + plan_protocol.plan_audit_callback_marker(audit)
+            return (
+                {
+                    "final_message": callback,
+                    "delegation_started_at": audit["started_at"],
+                    "completed_at": audit["completed_at"],
+                    "delegation_arguments": {
+                        "message": "Independent Plan spec auditor\nAudit the remote Plan."
+                    },
+                },
+                None,
+            )
+
+        errors: list[str] = []
+        with patch.object(
+            validator,
+            "collaboration_delegated_audit_evidence",
+            side_effect=authenticated_evidence,
+        ):
+            validator.validate_plan_protocol_evidence(
+                manifest, body, errors, skip_remote=True
+            )
+        self.assertIn(
+            "dependency classification lacks a completed independent Plan audit binding",
+            errors,
+        )
+
     def test_authenticated_plan_audit_callback_binds_semantic_findings(self):
         manifest = self.manifest()
         audit = manifest["plan_audits"][0]

@@ -501,3 +501,83 @@ def verify_parent_graph_authorization(
             "parent trace lacks a user authorization covering the graph transaction"
         )
     return errors
+
+
+def validate_task_authorization_evidence(
+    data: dict[str, Any], authorization: dict[str, Any], task_ids: list[str]
+) -> list[str]:
+    """Authenticate exact partial-scope task approval from the parent user trace."""
+
+    errors: list[str] = []
+    if authorization.get("receipt_kind") != "authenticated_parent_user_message":
+        errors.append("partial authorization receipt_kind is invalid")
+    parent_id = data.get("parent_thread_id")
+    if authorization.get("parent_thread_id") != parent_id or not nonempty(parent_id):
+        errors.append("partial authorization parent_thread_id mismatch")
+    if authorization.get("authorized_task_ids") != task_ids:
+        errors.append("partial authorization task IDs do not match executable scope")
+    message_sha = authorization.get("message_sha256")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(message_sha)):
+        errors.append("partial authorization message_sha256 is invalid")
+    quote = authorization.get("quote")
+    if not nonempty(quote):
+        errors.append("partial authorization quote is required")
+    if errors:
+        return errors
+
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    parent_files = list((codex_home / "sessions").rglob(f"*{parent_id}.jsonl"))
+    if len(parent_files) != 1:
+        return [
+            f"expected one parent rollout session for {parent_id}, found {len(parent_files)}"
+        ]
+    matched = False
+    revoked = False
+    affirmative = re.compile(
+        r"^\s*(?:(?:i\s+)?(?:authorize|approve)(?:\s+partial\s+implementation\s+for)?|"
+        r"(?:please\s+)?implement|(?:please\s+)?(?:proceed|continue)(?:\s+with)?)"
+        r"\s+(?P<scope>[T0-9,\sand-]+)\s+only[.!]?\s*$",
+        re.IGNORECASE,
+    )
+    negative = re.compile(
+        r"\b(?:do not|don't|must not|never|not authorized|revoke|revoked|cancel|stop)\b",
+        re.IGNORECASE,
+    )
+    try:
+        for line in parent_files[0].read_text().splitlines():
+            item = json.loads(line)
+            payload = item.get("payload", {})
+            if item.get("type") != "response_item" or payload.get("type") != "message":
+                continue
+            if payload.get("role") != "user":
+                continue
+            message = "\n".join(
+                block.get("text", "")
+                for block in payload.get("content", [])
+                if isinstance(block, dict)
+            )
+            if matched:
+                if negative.search(message):
+                    revoked = True
+                continue
+            if hashlib.sha256(message.encode()).hexdigest() != message_sha:
+                continue
+            if item.get("timestamp") != authorization.get("received_at"):
+                continue
+            if quote != message or any(task_id not in quote for task_id in task_ids):
+                continue
+            match = affirmative.fullmatch(message)
+            if (
+                match is None
+                or re.findall(r"T-\d{3}", match.group("scope")) != task_ids
+                or negative.search(message)
+            ):
+                continue
+            matched = True
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"partial authorization parent trace is unreadable: {exc}"]
+    if not matched or revoked:
+        errors.append(
+            "parent trace lacks a current affirmative user authorization for the executable task IDs"
+        )
+    return errors

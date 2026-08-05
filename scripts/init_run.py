@@ -27,7 +27,12 @@ from plan_protocol import (
     protocol_activation_receipt_path,
     record_protocol_activation,
 )
-from intent_router import HARD_STOP_ACTIONS
+from intent_router import HARD_STOP_ACTIONS, resolve_assurance_invocation, route
+from context_capsule import (
+    create as create_context_capsule,
+    status as context_capsule_status,
+    verify_chain as verify_context_capsule,
+)
 
 
 def git(root: Path, *args: str) -> str:
@@ -69,6 +74,7 @@ def main() -> int:
     parser.add_argument("--goal", required=True)
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--tier", choices=("quick", "balanced", "deep"))
+    parser.add_argument("--assurance", choices=("light", "heavy"))
     parser.add_argument("--routing-decision", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--output", type=Path)
@@ -136,12 +142,94 @@ def main() -> int:
         raise ValueError("--tier requires a --routing-decision produced by intent_router.py")
     if args.tier and routing_decision.get("tier") != args.tier:
         raise ValueError("--tier must match the routing decision tier")
+    if routing_decision is None and args.assurance:
+        routing_decision = route(
+            {}, requested_tier="deep" if args.assurance == "heavy" else None
+        )
     delivery_tier = args.tier or (routing_decision or {}).get("tier", "deep")
     if delivery_tier not in {"quick", "balanced", "deep"}:
         raise ValueError("routing decision must select quick, balanced, or deep")
     requested_tier_by_mode = {"quick": "quick", "balanced": "balanced"}
     if args.mode in requested_tier_by_mode and delivery_tier != requested_tier_by_mode[args.mode]:
         raise ValueError("Quick and Balanced modes must match the routing decision tier")
+    uses_legacy_tier = bool(args.tier or args.routing_decision or args.mode in {"quick", "balanced"})
+    if args.assurance and uses_legacy_tier:
+        raise ValueError("BLOCKED_ASSURANCE_SELECTION: explicit assurance cannot be combined with a legacy tier")
+    assurance_tokens = (
+        ["--assurance", args.assurance, args.mode]
+        if args.assurance
+        else [args.mode]
+    )
+    assurance_selection = resolve_assurance_invocation(
+        assurance_tokens,
+        legacy_tier=delivery_tier if uses_legacy_tier else None,
+    )
+    capsule_path = output.parent / f".{output.name}.context-capsule.json"
+    source_digest = hashlib.sha256(starting_commit.encode("utf-8")).hexdigest()
+    capsule_assurance = {
+        "requested": assurance_selection["requested_assurance"]
+        or assurance_selection["requested_legacy_tier"]
+        or assurance_selection["effective_assurance"],
+        "effective": assurance_selection["effective_assurance"],
+        "achieved": assurance_selection["achieved_assurance"],
+        "selection_origin": assurance_selection["selection_origin"],
+        "legacy_subprofile": assurance_selection["legacy_subprofile"],
+    }
+    if capsule_path.exists():
+        capsule_result = context_capsule_status(capsule_path)
+        if capsule_result.get("status") != "VALID":
+            raise RuntimeError("stranded context capsule is invalid")
+        capsule_ref = capsule_result["ref"]
+        if capsule_ref.get("capsule_id") != f"capsule-{run_id}":
+            raise RuntimeError("stranded context capsule does not match the requested run")
+        stranded_capsule = verify_context_capsule(capsule_path)
+        if (
+            stranded_capsule.get("objective") != args.goal
+            or stranded_capsule.get("source_revisions")
+            != [
+                {
+                    "source_id": "repository-baseline",
+                    "revision": starting_commit,
+                    "digest": source_digest,
+                }
+            ]
+            or stranded_capsule.get("assurance") != capsule_assurance
+        ):
+            raise RuntimeError("stranded context capsule does not match workflow identity")
+    else:
+        capsule = create_context_capsule(
+            capsule_path,
+            capsule_id=f"capsule-{run_id}",
+            objective=args.goal,
+            settled_decisions=[],
+            source_revisions=[
+                {
+                    "source_id": "repository-baseline",
+                    "revision": starting_commit,
+                    "digest": source_digest,
+                }
+            ],
+            evidence_refs=[],
+            execution_frontier={
+                "state": "ready",
+                "next_action": f"Begin {args.mode} work",
+                "responsible_component": "evidence-gated-delivery",
+                "blocker_ref": None,
+            },
+            unresolved_questions=[],
+            next_action={
+                "description": f"Begin {args.mode} work",
+                "risk_classification": "ordinary_scoped_recoverable",
+                "authority_ref": "repository-baseline",
+            },
+            assurance=capsule_assurance,
+            timestamp=now_text,
+        )
+        capsule_ref = {
+            field: capsule[field]
+            for field in ("schema_version", "capsule_id", "generation", "digest")
+        }
+    capsule_ref["locator"] = str(capsule_path)
     manifest = {
         "run_id": run_id,
         "run_started_at": now_text,
@@ -155,6 +243,8 @@ def main() -> int:
             "review_completed_at": "",
         },
         "mode": args.mode,
+        **assurance_selection,
+        "assurance": assurance_selection,
         "goal": args.goal,
         "selected_mode_reason": "",
         "repo_root": str(root),
@@ -173,6 +263,7 @@ def main() -> int:
             "rationale": "legacy initialization defaults to Deep",
         },
         "tier_evidence": {"sources": [], "checks": [], "external_actions": []},
+        "gate_economics": [],
         "execution_frontier": {"next_material_action": "", "state": "ready", "recovery_state": "continue", "hard_boundary": ""},
         "progress_events": [],
         "progress_evidence": [],
@@ -190,6 +281,13 @@ def main() -> int:
         "phase_transition_judgments": [],
         "automation_decisions": [],
         "predecessor_evidence": {},
+        "unresolved_hard_stops": [],
+        "context_capsule_ref": capsule_ref,
+        "projection_transaction_evidence_required": True,
+        "projection_transaction_evidence": {},
+        "dependency_readiness_evidence_required": True,
+        "dependency_classification_evidence": {},
+        "dependency_readiness_evidence": {},
         "phase_retrospectives": [],
         "retrospective_baseline": {},
         "initiative_identity": {

@@ -33,6 +33,8 @@ import successor_visual_validation
 import trace_validation
 import workflow_gate_validation
 import review_phase_validation
+import github_dependency_readback
+import dependency_readiness
 from plan_protocol import (
     PLAN_PROTOCOL_V1,
     PLAN_PROTOCOL_V2,
@@ -91,8 +93,6 @@ RETROSPECTIVE_RUBRIC = {
     "delivery_reliability",
     "learning_quality",
 }
-
-
 def _trace_dependencies() -> trace_validation.TraceDependencies:
     return trace_validation.TraceDependencies(
         completed_agent=completed_agent,
@@ -105,8 +105,6 @@ def _trace_dependencies() -> trace_validation.TraceDependencies:
         provider_delegated_audit_evidence=provider_receipts.provider_delegated_audit_evidence,
         timestamp=timestamp,
     )
-
-
 def _plan_protocol_dependencies() -> plan_phase_validation.PlanProtocolDependencies:
     return plan_phase_validation.PlanProtocolDependencies(
         nonempty=nonempty,
@@ -119,9 +117,11 @@ def _plan_protocol_dependencies() -> plan_phase_validation.PlanProtocolDependenc
         _live_graph_capabilities=_live_graph_capabilities,
         _remote_graph_state=_remote_graph_state,
         _remote_workflow_graph_artifacts=_remote_workflow_graph_artifacts,
+        dependency_authority_reader=github_dependency_readback.dependency_authority_reader,
+        dependency_interface_reader=github_dependency_readback.dependency_interface_reader,
+        phase_receipt_verifier=lambda manifest, phase: dependency_readiness.canonical_phase_receipt_replay(manifest, phase, validate),
+        dependency_authorization_verifier=collaboration_receipts.validate_task_authorization_evidence,
     )
-
-
 def _plan_gate_dependencies() -> plan_phase_validation.PlanGateDependencies:
     return plan_phase_validation.PlanGateDependencies(
         PLAN_HEADINGS=PLAN_HEADINGS,
@@ -142,8 +142,6 @@ def _plan_gate_dependencies() -> plan_phase_validation.PlanGateDependencies:
         remote_image_sha256=remote_image_sha256,
         markdown_section=markdown_section,
     )
-
-
 def _review_dependencies() -> review_phase_validation.ReviewDependencies:
     return review_phase_validation.ReviewDependencies(
         add_plan_errors=add_plan_errors,
@@ -157,9 +155,11 @@ def _review_dependencies() -> review_phase_validation.ReviewDependencies:
         timestamp=timestamp,
         agent_ids=agent_ids,
         github_readback=github_readback,
+        dependency_authority_reader=github_dependency_readback.dependency_authority_reader,
+        dependency_interface_reader=github_dependency_readback.dependency_interface_reader,
+        phase_receipt_verifier=lambda manifest, phase: dependency_readiness.canonical_phase_receipt_replay(manifest, phase, validate),
+        dependency_authorization_verifier=collaboration_receipts.validate_task_authorization_evidence,
     )
-
-
 def _workflow_gate_dependencies() -> workflow_gate_validation.WorkflowGateDependencies:
     return workflow_gate_validation.WorkflowGateDependencies(
         nonempty=nonempty,

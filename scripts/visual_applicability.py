@@ -15,6 +15,25 @@ from visual_core import *  # noqa: F401,F403
 from visual_inventory import *  # noqa: F401,F403
 from visual_policy import *  # noqa: F401,F403
 
+
+def project_visual_disposition(
+    authority_bytes: bytes,
+    authority_digest: str,
+    versions: dict[str, str],
+    *,
+    phase: str,
+    user_directions: list[str],
+    runtime_evidence: list[dict] | None = None,
+) -> dict:
+    """Public facade for the projection-kernel visual adapter contract."""
+
+    adapter = visual_disposition_projection_adapter(
+        phase=phase,
+        user_directions=user_directions,
+        runtime_evidence=runtime_evidence,
+    )
+    return adapter(authority_bytes, authority_digest, versions)
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("body", type=Path)

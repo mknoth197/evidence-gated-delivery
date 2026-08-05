@@ -50,3 +50,17 @@ python3 <skill-dir>/scripts/record_retrospective.py <manifest.json> \
 The next phase validator is the gate. A retrospective may run concurrently with non-mutating
 preparation, but no plan, implementation, or review transition is valid until the required entry
 is complete and any degradation is remediated.
+
+## Gate economics
+
+Every optional Heavy gate records a local-only `gate-economics/v1` entry with stable `gate_id`,
+name, applicability predicate and result, distinct failure class, expected and actual latency,
+cost proxy (`UNKNOWN` when unavailable), finding or no-finding, remediation, raw denominator,
+duplicate-finding count and rate, and downstream outcome or `INSUFFICIENT_EVIDENCE`. Duplicate
+failure classes are non-authoritative diagnostics. They may motivate a human-reviewed policy
+proposal but never retire or weaken a gate automatically.
+
+Required gates remain `active`. Retirement requires explicit `human_review` evidence with reviewer,
+decision, and timestamp. Gate economics stays in local run artifacts: it contains no telemetry,
+remote endpoint, ingestion configuration, or network-write instruction. Retrospectives carry only
+the bounded count and diagnostic summary needed to compound workflow learning.

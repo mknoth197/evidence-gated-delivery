@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any
+from typing import Any, Mapping
+
+from plan_tasks import authority_text, present_projection_slot, projection_payload
 
 from visual_core import (
     AUTHORITY_RANK, BLOCKED_DECISION, DECISION_BY_MODE, DOMAIN_PREFIXES,
@@ -14,6 +16,86 @@ from visual_core import (
     _sequential,
 )
 from visual_inventory import build_plan_inventory, extract_scope_inventory, inventory_sha256
+
+VISUAL_DISPOSITION_PROJECTION_VERSION = "visual-disposition-projection/v1"
+_VISUAL_PAYLOAD_FIELDS = frozenset(
+    ("adapter_version", "input_digest", "disposition")
+)
+
+
+def visual_disposition_projection_adapter(
+    *,
+    phase: str,
+    user_directions: list[str],
+    runtime_evidence: list[dict[str, Any]] | None = None,
+    runtime_evidence_not_before: str | None = None,
+    runtime_evidence_not_after: str | None = None,
+):
+    """Freeze all non-authority inputs for deterministic visual projection."""
+
+    frozen_directions = copy.deepcopy(user_directions)
+    frozen_runtime = copy.deepcopy(runtime_evidence)
+
+    def project(
+        authority_bytes: bytes,
+        authority_digest: str,
+        versions: Mapping[str, str],
+    ) -> dict[str, Any]:
+        body = authority_text(authority_bytes)
+        inventory, extraction_errors = build_plan_inventory(
+            body,
+            user_directions=frozen_directions,
+            runtime_evidence=frozen_runtime,
+            runtime_evidence_not_before=runtime_evidence_not_before,
+            runtime_evidence_not_after=runtime_evidence_not_after,
+        )
+        declared = {
+            domain: [entry["id"] for entry in entries]
+            for domain, entries in inventory.items()
+            if domain in DOMAIN_PREFIXES and isinstance(entries, list)
+        }
+        disposition = evaluate_visual_applicability(
+            inventory,
+            phase=phase,
+            authoritative_issue_body=body,
+            declared_ids=declared,
+        )
+        if extraction_errors:
+            disposition["blocking_reasons"] = sorted(
+                set(disposition["blocking_reasons"] + extraction_errors)
+            )
+            disposition["status"] = "blocked"
+            disposition["decision"] = BLOCKED_DECISION
+            disposition["evidence_mode"] = None
+        payload = {
+            "adapter_version": VISUAL_DISPOSITION_PROJECTION_VERSION,
+            "input_digest": authority_digest,
+            "disposition": disposition,
+        }
+        return {
+            "authority_digest": authority_digest,
+            "versions": dict(versions),
+            "slot": present_projection_slot(
+                payload, VISUAL_DISPOSITION_PROJECTION_VERSION
+            ),
+        }
+
+    return project
+
+
+def visual_disposition_from_projection_bundle(
+    bundle: Mapping[str, Any], slot_name: str = "visual_disposition"
+) -> dict[str, Any]:
+    payload = projection_payload(
+        bundle,
+        slot_name,
+        projection_version=VISUAL_DISPOSITION_PROJECTION_VERSION,
+        payload_fields=_VISUAL_PAYLOAD_FIELDS,
+    )
+    disposition = payload["disposition"]
+    if not isinstance(disposition, dict):
+        raise ValueError("visual disposition projection must be an object")
+    return disposition
 
 def _entry_errors(inventory: dict[str, Any], declared_ids: dict[str, Any] | None) -> list[str]:
     errors: list[str] = []
